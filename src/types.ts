@@ -44,14 +44,3 @@ export enum ArticleStatus {
   PUBLISHED = 'published',
   ARCHIVED = 'archived',
 }
-
-export interface CreateUserDto {
-  login: string;
-  password: string;
-  role?: UserRole; // defaults to 'viewer'
-}
-
-export interface UpdatePasswordDto {
-  oldPassword: string;
-  newPassword: string;
-}
