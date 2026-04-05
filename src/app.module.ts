@@ -7,6 +7,7 @@ import { RequestLoggerMiddleware } from './common/middleware/request-logger.midd
 import { StorageModule } from './storage/storage.module';
 import { UserModule } from './user/user.module';
 import { ArticleModule } from './article/article.module';
+import { CategoryModule } from './category/category.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { ArticleModule } from './article/article.module';
     StorageModule,
     UserModule,
     ArticleModule,
+    CategoryModule,
   ],
   providers: [
     { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor },

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Article, ArticleStatus, Comment, User } from '../types';
+import { Article, ArticleStatus, Category, Comment, User } from '../types';
 
 /**
  * In-memory store. Replace with a database-backed repository in later tasks.
@@ -8,6 +8,7 @@ import { Article, ArticleStatus, Comment, User } from '../types';
 export class KnowledgeHubStore {
   private readonly users: User[] = [];
   private readonly articles: Article[] = [];
+  private readonly categories: Category[] = [];
   private readonly comments: Comment[] = [];
 
   getAllUsers(): User[] {
@@ -120,6 +121,48 @@ export class KnowledgeHubStore {
         this.comments.splice(i, 1);
       }
     }
+    return true;
+  }
+
+  getAllCategories(): Category[] {
+    return this.categories.map((category: Category) => ({ ...category }));
+  }
+
+  findCategoryById(id: string): Category | undefined {
+    const category = this.categories.find(
+      (category: Category) => category.id === id,
+    );
+    return category ? { ...category } : undefined;
+  }
+
+  findCategoryByIdMutable(id: string): Category | undefined {
+    return this.categories.find((category: Category) => category.id === id);
+  }
+
+  insertCategory(category: Category): void {
+    this.categories.push(category);
+  }
+
+  updateCategoryRecord(
+    id: string,
+    patch: Partial<Category>,
+  ): Category | undefined {
+    const category = this.findCategoryByIdMutable(id);
+    if (!category) {
+      return undefined;
+    }
+    Object.assign(category, patch);
+    return { ...category };
+  }
+
+  deleteCategory(id: string): boolean {
+    const index = this.categories.findIndex(
+      (category: Category) => category.id === id,
+    );
+    if (index === -1) {
+      return false;
+    }
+    this.categories.splice(index, 1);
     return true;
   }
 }
