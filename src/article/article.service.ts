@@ -1,21 +1,27 @@
 import {
-  ForbiddenException,
+  BadRequestException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { Article, User, UserRole } from '../types';
+import { Article, ArticleStatus } from '../types';
 import { KnowledgeHubStore } from '../storage/knowledge-hub.store';
-import { CreateArticleDto } from './dto/create-article.dto';
 import { ArticleResponseDto } from './dto/article-response.dto';
+import { CreateArticleDto } from './dto/create-article.dto';
+import { FindArticlesQueryDto } from './dto/find-articles-query.dto';
+import { UpdateArticleDto } from './dto/update-article.dto';
 
 @Injectable()
 export class ArticleService {
   constructor(private readonly store: KnowledgeHubStore) {}
 
-  findAll(): ArticleResponseDto[] {
+  findAll(query: FindArticlesQueryDto): ArticleResponseDto[] {
     return this.store
-      .getAllArticles()
+      .findArticles({
+        status: query.status,
+        categoryId: query.categoryId,
+        tag: query.tag,
+      })
       .map((article: Article) => this.toPublic(article));
   }
 
@@ -27,47 +33,60 @@ export class ArticleService {
     return this.toPublic(article);
   }
 
-  // create(dto: CreateArticleDto): ArticleResponseDto {
-  //   const now = Date.now();
-  //   const role = dto.role ?? UserRole.VIEWER;
-  //   const record: User = {
-  //     id: randomUUID(),
-  //     login: dto.login,
-  //     password: dto.password,
-  //     role,
-  //     createdAt: now,
-  //     updatedAt: now,
-  //   };
-  //   this.store.insertUser(record);
-  //   return this.toPublic(record);
-  // }
+  create(dto: CreateArticleDto): ArticleResponseDto {
+    const now = Date.now();
+    const record: Article = {
+      id: randomUUID(),
+      title: dto.title,
+      content: dto.content,
+      status: ArticleStatus.DRAFT,
+      authorId: null,
+      categoryId: null,
+      tags: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.store.insertArticle(record);
+    return this.toPublic(record);
+  }
 
-  // updatePassword(id: string, dto: UpdatePasswordDto): ArticleResponseDto {
-  //   const user = this.store.findUserByIdMutable(id);
-  //   if (!user) {
-  //     throw new NotFoundException('User not found');
-  //   }
-  //   if (user.password !== dto.oldPassword) {
-  //     throw new ForbiddenException('Old password is incorrect');
-  //   }
-  //   const updatedAt = Date.now();
-  //   this.store.updateUserRecord(id, {
-  //     password: dto.newPassword,
-  //     updatedAt,
-  //   });
-  //   const fresh = this.store.findUserById(id);
-  //   if (!fresh) {
-  //     throw new NotFoundException('User not found');
-  //   }
-  //   return this.toPublic(fresh);
-  // }
-  //
-  // remove(id: string): void {
-  //   const deleted = this.store.deleteUser(id);
-  //   if (!deleted) {
-  //     throw new NotFoundException('User not found');
-  //   }
-  // }
+  update(id: string, dto: UpdateArticleDto): ArticleResponseDto {
+    const patch: Partial<Article> = {};
+    if (dto.title !== undefined) {
+      patch.title = dto.title;
+    }
+    if (dto.content !== undefined) {
+      patch.content = dto.content;
+    }
+    if (dto.status !== undefined) {
+      patch.status = dto.status;
+    }
+    if (dto.authorId !== undefined) {
+      patch.authorId = dto.authorId;
+    }
+    if (dto.categoryId !== undefined) {
+      patch.categoryId = dto.categoryId;
+    }
+    if (dto.tags !== undefined) {
+      patch.tags = dto.tags;
+    }
+    if (Object.keys(patch).length === 0) {
+      throw new BadRequestException('No fields to update');
+    }
+    patch.updatedAt = Date.now();
+    const updated = this.store.updateArticleRecord(id, patch);
+    if (!updated) {
+      throw new NotFoundException('Article not found');
+    }
+    return this.toPublic(updated);
+  }
+
+  remove(id: string): void {
+    const deleted = this.store.deleteArticle(id);
+    if (!deleted) {
+      throw new NotFoundException('Article not found');
+    }
+  }
 
   private toPublic(article: Article): ArticleResponseDto {
     return {
@@ -77,7 +96,7 @@ export class ArticleService {
       status: article.status,
       authorId: article.authorId,
       categoryId: article.categoryId,
-      tags: article.tags,
+      tags: [...article.tags],
       createdAt: article.createdAt,
       updatedAt: article.updatedAt,
     };

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Article, User, Comment } from '../types';
+import { Article, ArticleStatus, Comment, User } from '../types';
 
 /**
  * In-memory store. Replace with a database-backed repository in later tasks.
@@ -59,12 +59,67 @@ export class KnowledgeHubStore {
     }
   }
 
-  getAllArticles(): Article[] {
-    return this.articles.map((article: Article) => ({ ...article }));
-  }
-
   findArticleById(id: string): Article | undefined {
     const article = this.articles.find((article: Article) => article.id === id);
     return article ? { ...article } : undefined;
+  }
+
+  findArticleByIdMutable(id: string): Article | undefined {
+    return this.articles.find((article: Article) => article.id === id);
+  }
+
+  findArticles(filters: {
+    status?: ArticleStatus;
+    categoryId?: string;
+    tag?: string;
+  }): Article[] {
+    return this.articles
+      .filter((article: Article) => {
+        if (filters.status !== undefined && article.status !== filters.status) {
+          return false;
+        }
+        if (
+          filters.categoryId !== undefined &&
+          article.categoryId !== filters.categoryId
+        ) {
+          return false;
+        }
+        return !(
+          filters.tag !== undefined && !article.tags.includes(filters.tag)
+        );
+      })
+      .map((article: Article) => ({ ...article }));
+  }
+
+  insertArticle(article: Article): void {
+    this.articles.push(article);
+  }
+
+  updateArticleRecord(
+    id: string,
+    patch: Partial<Article>,
+  ): Article | undefined {
+    const article = this.findArticleByIdMutable(id);
+    if (!article) {
+      return undefined;
+    }
+    Object.assign(article, patch);
+    return { ...article };
+  }
+
+  deleteArticle(id: string): boolean {
+    const index = this.articles.findIndex(
+      (article: Article) => article.id === id,
+    );
+    if (index === -1) {
+      return false;
+    }
+    this.articles.splice(index, 1);
+    for (let i = this.comments.length - 1; i >= 0; i -= 1) {
+      if (this.comments[i].articleId === id) {
+        this.comments.splice(i, 1);
+      }
+    }
+    return true;
   }
 }

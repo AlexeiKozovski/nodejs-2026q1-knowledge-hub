@@ -14,11 +14,11 @@ export class ArticleResponseDto {
   @ApiProperty({ enum: ArticleStatus })
   status!: ArticleStatus;
 
-  @ApiProperty()
-  authorId!: string;
+  @ApiProperty({ format: 'uuid', nullable: true })
+  authorId!: string | null;
 
-  @ApiProperty()
-  categoryId!: string;
+  @ApiProperty({ format: 'uuid', nullable: true })
+  categoryId!: string | null;
 
   @ApiProperty()
   tags!: string[];
