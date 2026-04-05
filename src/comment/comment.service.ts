@@ -20,6 +20,14 @@ export class CommentService {
       .map((comment: Comment) => this.toPublic(comment));
   }
 
+  findOne(id: string): CommentResponseDto {
+    const comment = this.store.findCommentById(id);
+    if (!comment) {
+      throw new NotFoundException('Comment not found');
+    }
+    return this.toPublic(comment);
+  }
+
   create(dto: CreateCommentDto): CommentResponseDto {
     const article = this.store.findArticleById(dto.articleId);
     if (!article) {
@@ -32,7 +40,7 @@ export class CommentService {
       id: randomUUID(),
       content: dto.content,
       articleId: dto.articleId,
-      authorId: null,
+      authorId: dto.authorId ?? null,
       createdAt: now,
     };
     this.store.insertComment(record);
