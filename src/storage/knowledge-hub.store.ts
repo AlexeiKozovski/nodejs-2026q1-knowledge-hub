@@ -11,16 +11,16 @@ export class KnowledgeHubStore {
   private readonly comments: Comment[] = [];
 
   getAllUsers(): User[] {
-    return this.users.map((u) => ({ ...u }));
+    return this.users.map((user: User) => ({ ...user }));
   }
 
   findUserById(id: string): User | undefined {
-    const user = this.users.find((u) => u.id === id);
+    const user = this.users.find((user: User) => user.id === id);
     return user ? { ...user } : undefined;
   }
 
   findUserByIdMutable(id: string): User | undefined {
-    return this.users.find((u) => u.id === id);
+    return this.users.find((user: User) => user.id === id);
   }
 
   insertUser(user: User): void {
@@ -37,7 +37,7 @@ export class KnowledgeHubStore {
   }
 
   deleteUser(id: string): boolean {
-    const index = this.users.findIndex((u) => u.id === id);
+    const index = this.users.findIndex((user: User) => user.id === id);
     if (index === -1) {
       return false;
     }
@@ -57,5 +57,14 @@ export class KnowledgeHubStore {
         this.comments.splice(i, 1);
       }
     }
+  }
+
+  getAllArticles(): Article[] {
+    return this.articles.map((article: Article) => ({ ...article }));
+  }
+
+  findArticleById(id: string): Article | undefined {
+    const article = this.articles.find((article: Article) => article.id === id);
+    return article ? { ...article } : undefined;
   }
 }
