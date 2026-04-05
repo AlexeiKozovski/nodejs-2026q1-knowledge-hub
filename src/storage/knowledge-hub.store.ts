@@ -170,4 +170,28 @@ export class KnowledgeHubStore {
     }
     return true;
   }
+
+  findCommentsByArticleId(articleId: string): Comment[] {
+    return this.comments
+      .filter((comment: Comment) => comment.articleId === articleId)
+      .map((comment: Comment) => ({ ...comment }));
+  }
+
+  insertComment(comment: Comment): void {
+    this.comments.push(comment);
+  }
+
+  findCommentById(id: string): Comment | undefined {
+    const comment = this.comments.find((c: Comment) => c.id === id);
+    return comment ? { ...comment } : undefined;
+  }
+
+  deleteComment(id: string): boolean {
+    const index = this.comments.findIndex((c: Comment) => c.id === id);
+    if (index === -1) {
+      return false;
+    }
+    this.comments.splice(index, 1);
+    return true;
+  }
 }
