@@ -163,6 +163,11 @@ export class KnowledgeHubStore {
       return false;
     }
     this.categories.splice(index, 1);
+    for (const article of this.articles) {
+      if (article.categoryId === id) {
+        article.categoryId = null;
+      }
+    }
     return true;
   }
 }

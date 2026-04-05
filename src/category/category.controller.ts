@@ -21,6 +21,7 @@ import {
 } from '@nestjs/swagger';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { CategoryResponseDto } from './dto/category-response.dto';
+import { UpdateCategoryDto } from './dto/update-category.dto';
 import { CategoryService } from './category.service';
 
 @ApiTags('categories')
@@ -36,7 +37,7 @@ export class CategoryController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get single category  by id' })
+  @ApiOperation({ summary: 'Get single category by id' })
   @ApiOkResponse({ type: CategoryResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid category id (not a UUID v4)' })
   @ApiNotFoundResponse({ description: 'Category not found' })
@@ -62,7 +63,7 @@ export class CategoryController {
   @ApiNotFoundResponse({ description: 'Category not found' })
   update(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
-    @Body() dto: CreateCategoryDto,
+    @Body() dto: UpdateCategoryDto,
   ): CategoryResponseDto {
     return this.categoryService.update(id, dto);
   }

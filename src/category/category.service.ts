@@ -8,6 +8,7 @@ import { Category } from '../types';
 import { KnowledgeHubStore } from '../storage/knowledge-hub.store';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { CategoryResponseDto } from './dto/category-response.dto';
+import { UpdateCategoryDto } from './dto/update-category.dto';
 
 @Injectable()
 export class CategoryService {
@@ -37,7 +38,7 @@ export class CategoryService {
     return this.toPublic(record);
   }
 
-  update(id: string, dto: CreateCategoryDto): CategoryResponseDto {
+  update(id: string, dto: UpdateCategoryDto): CategoryResponseDto {
     const patch: Partial<Category> = {};
     if (dto.name !== undefined) {
       patch.name = dto.name;
