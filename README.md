@@ -1,72 +1,158 @@
-# Home Library Service
+# Knowledge Hub API
 
-## Prerequisites
+REST API for the **Knowledge Hub** platform (Nest.js, TypeScript). The service manages **users**, **articles**, **categories**, and **comments** with in-memory storage (ready to be swapped for a database later).
 
-- Git - [Download & Install Git](https://git-scm.com/downloads).
-- Node.js - [Download & Install Node.js](https://nodejs.org/en/download/) and the npm package manager.
+## Requirements
 
-## Downloading
+- **Node.js** `>= 24.10.0`
+- **npm** `>= 10`
 
-```
-git clone {repository URL}
-```
+## Installation
 
-## Installing NPM modules
+```bash
+git clone https://github.com/AlexeiKozovski/nodejs-2026q1-knowledge-hub.git
 
-```
+cd nodejs-2026q1-knowledge-hub
+
+git checkout develop
+
 npm install
 ```
 
-## Running application
+## Configuration
 
-```
-npm start
+The application reads its configuration from a `.env` file in the project root.
+
+**1. Create your `.env` file from the provided example:**
+
+```bash
+cp .env.example .env
 ```
 
-After starting the app on port (4000 as default) you can open
-in your browser OpenAPI documentation by typing http://localhost:4000/doc/.
-For more information about OpenAPI/Swagger please visit https://swagger.io/.
+**2. Edit .env if needed (default port is 4000):**
+
+```env
+PORT=4000
+```
+
+| Variable   | Description                                      | Default |
+| ---------- | ------------------------------------------------ | ------- |
+| `PORT`     | HTTP port the server listens on                  | `4000`  |
+| `API_KEY`  | If set, every request must send header `x-api-key` with this value (Swagger at `/doc` is excluded). Omit for local development and tests. | _(unset)_ |
+
+
+## Running the application
+
+| Command            | Description |
+| ------------------ | ----------- |
+| `npm start`        | Build (if needed) and run the API once (Nest CLI). |
+| `npm run start:dev` | Run with **watch** mode (reload on file changes). |
+| `npm run start:debug` | Same as `start:dev` with Node inspector. |
+| `npm run build`    | Compile TypeScript to `dist/`. |
+| `npm run start:prod` | Run compiled app: `node dist/main` (run `npm run build` first). |
+
+After startup, the API is available at:
+
+```text
+http://localhost:<PORT>
+```
+
+Default: `http://localhost:4000`.
+
+## Using the API
+
+### Conventions
+
+- **Request / response bodies** are **JSON** (`Content-Type: application/json`).
+- It is recommended to send **`Accept: application/json`**.
+- Identifiers are **UUID v4** unless noted otherwise.
+
+### OpenAPI (Swagger)
+
+Interactive documentation is served at:
+
+```text
+http://localhost:4000/doc
+```
+
+Use it to explore schemas, try requests, and copy `curl` examples.
+
+### Resource overview
+
+| Prefix       | Purpose |
+| ------------ | ------- |
+| `/user`      | Users: list, get by id, create, update password, delete. Passwords are never returned in responses. |
+| `/article`   | Articles: list (optional filters `status`, `categoryId`, `tag`), CRUD. |
+| `/category`  | Categories: list, get by id, create, update, delete. |
+| `/comment`   | Comments: list by **`?articleId=`** (required), get by id, create, delete. |
+
+### Quick examples (`curl`)
+
+Replace `4000` if your `PORT` differs.
+
+**List users**
+
+```bash
+curl -s -H "Accept: application/json" http://localhost:4000/user
+```
+
+**Create a user**
+
+```bash
+curl -s -X POST http://localhost:4000/user \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d "{\"login\":\"alice\",\"password\":\"secret\"}"
+```
+
+**List articles (optional filters)**
+
+```bash
+curl -s -H "Accept: application/json" \
+  "http://localhost:4000/article?status=published&tag=nodejs"
+```
+
+**Create an article** (minimal body; optional fields such as `status`, `authorId`, `categoryId`, `tags` are supported)
+
+```bash
+curl -s -X POST http://localhost:4000/article \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d "{\"title\":\"Hello\",\"content\":\"Body text\"}"
+```
+
+**List comments for an article**
+
+```bash
+curl -s -H "Accept: application/json" \
+  "http://localhost:4000/comment?articleId=<ARTICLE_UUID>"
+```
+
+**Create a comment**
+
+```bash
+curl -s -X POST http://localhost:4000/comment \
+  -H "Accept: application/json" \
+  -H "Content-Type: application/json" \
+  -d "{\"content\":\"Nice article\",\"articleId\":\"<ARTICLE_UUID>\"}"
+```
+
+If `API_KEY` is set in `.env`, add the header to API calls (not required for `/doc`):
+
+```bash
+-H "x-api-key: YOUR_SECRET_KEY"
+```
 
 ## Testing
 
-After application running open new terminal and enter:
+| Command        | Description |
+| -------------- | ----------- |
+| `npm test`     | Builds the project, starts the server on the configured port, runs Jest e2e tests against it, then stops the server. |
+| `npm run test:jest` | Runs Jest only. Use when the app is **already running** separately on the same `PORT` (e.g. second terminal: `npm start`). |
 
-To run all tests without authorization
+## Code quality
 
+```bash
+npm run lint    # ESLint (with --fix)
+npm run format  # Prettier
 ```
-npm run test
-```
-
-To run only one of all test suites
-
-```
-npm run test -- <path to suite>
-```
-
-To run all test with authorization
-
-```
-npm run test:auth
-```
-
-To run only specific test suite with authorization
-
-```
-npm run test:auth -- <path to suite>
-```
-
-### Auto-fix and format
-
-```
-npm run lint
-```
-
-```
-npm run format
-```
-
-### Debugging in VSCode
-
-Press <kbd>F5</kbd> to debug.
-
-For more information, visit: https://code.visualstudio.com/docs/editor/debugging
