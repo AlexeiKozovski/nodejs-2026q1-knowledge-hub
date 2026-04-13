@@ -17,7 +17,11 @@ export class OptionalApiKeyGuard implements CanActivate {
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<Request>();
-    if (request.path === '/doc' || request.path.startsWith('/doc/')) {
+    if (
+      request.path === '/' ||
+      request.path === '/doc' ||
+      request.path.startsWith('/doc/')
+    ) {
       return true;
     }
     const requiredKey = this.configService.get<string>('API_KEY');
