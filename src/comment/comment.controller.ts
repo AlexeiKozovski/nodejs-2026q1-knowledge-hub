@@ -43,7 +43,7 @@ export class CommentController {
   @ApiBadRequestResponse({
     description: 'articleId missing or not a valid UUID v4',
   })
-  findAll(@Query() query: FindCommentsQueryDto): CommentResponseDto[] {
+  findAll(@Query() query: FindCommentsQueryDto): Promise<CommentResponseDto[]> {
     return this.commentService.findAllForArticle(query);
   }
 
@@ -56,7 +56,7 @@ export class CommentController {
   @ApiNotFoundResponse({ description: 'Comment not found' })
   findOne(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
-  ): CommentResponseDto {
+  ): Promise<CommentResponseDto> {
     return this.commentService.findOne(id);
   }
 
@@ -68,7 +68,7 @@ export class CommentController {
   @ApiUnprocessableEntityResponse({
     description: 'articleId does not reference an existing article',
   })
-  create(@Body() dto: CreateCommentDto): CommentResponseDto {
+  create(@Body() dto: CreateCommentDto): Promise<CommentResponseDto> {
     return this.commentService.create(dto);
   }
 
@@ -80,7 +80,9 @@ export class CommentController {
     description: 'Invalid comment id (not a UUID v4)',
   })
   @ApiNotFoundResponse({ description: 'Comment not found' })
-  remove(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string): void {
-    this.commentService.remove(id);
+  async remove(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<void> {
+    await this.commentService.remove(id);
   }
 }

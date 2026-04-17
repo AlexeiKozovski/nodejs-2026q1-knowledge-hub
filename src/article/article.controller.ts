@@ -43,7 +43,7 @@ export class ArticleController {
   @ApiQuery({ name: 'categoryId', required: false, type: String })
   @ApiQuery({ name: 'tag', required: false, example: 'nodejs' })
   @ApiOkResponse({ type: ArticleResponseDto, isArray: true })
-  findAll(@Query() query: FindArticlesQueryDto): ArticleResponseDto[] {
+  findAll(@Query() query: FindArticlesQueryDto): Promise<ArticleResponseDto[]> {
     return this.articleService.findAll(query);
   }
 
@@ -54,7 +54,7 @@ export class ArticleController {
   @ApiNotFoundResponse({ description: 'Article not found' })
   findOne(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
-  ): ArticleResponseDto {
+  ): Promise<ArticleResponseDto> {
     return this.articleService.findOne(id);
   }
 
@@ -63,7 +63,7 @@ export class ArticleController {
   @ApiOperation({ summary: 'Create article' })
   @ApiCreatedResponse({ type: ArticleResponseDto })
   @ApiBadRequestResponse({ description: 'Validation failed' })
-  create(@Body() dto: CreateArticleDto): ArticleResponseDto {
+  create(@Body() dto: CreateArticleDto): Promise<ArticleResponseDto> {
     return this.articleService.create(dto);
   }
 
@@ -75,7 +75,7 @@ export class ArticleController {
   update(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() dto: UpdateArticleDto,
-  ): ArticleResponseDto {
+  ): Promise<ArticleResponseDto> {
     return this.articleService.update(id, dto);
   }
 
@@ -87,7 +87,9 @@ export class ArticleController {
     description: 'Invalid article id (not a UUID v4)',
   })
   @ApiNotFoundResponse({ description: 'Article not found' })
-  remove(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string): void {
-    this.articleService.remove(id);
+  async remove(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<void> {
+    await this.articleService.remove(id);
   }
 }

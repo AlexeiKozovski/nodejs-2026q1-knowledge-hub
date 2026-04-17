@@ -3,67 +3,71 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { randomUUID } from 'crypto';
-import { Category } from '../types';
-import { KnowledgeHubStore } from '../storage/knowledge-hub.store';
+import { Category as PrismaCategory } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { CategoryResponseDto } from './dto/category-response.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 
 @Injectable()
 export class CategoryService {
-  constructor(private readonly store: KnowledgeHubStore) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  findAll(): CategoryResponseDto[] {
-    return this.store
-      .getAllCategories()
-      .map((category) => this.toPublic(category));
+  async findAll(): Promise<CategoryResponseDto[]> {
+    const categories = await this.prisma.category.findMany();
+    return categories.map((category) => this.toPublic(category));
   }
 
-  findOne(id: string): CategoryResponseDto {
-    const category = this.store.findCategoryById(id);
+  async findOne(id: string): Promise<CategoryResponseDto> {
+    const category = await this.prisma.category.findUnique({ where: { id } });
     if (!category) {
       throw new NotFoundException('Category not found');
     }
     return this.toPublic(category);
   }
 
-  create(dto: CreateCategoryDto): CategoryResponseDto {
-    const record: Category = {
-      id: randomUUID(),
-      name: dto.name,
-      description: dto.description,
-    };
-    this.store.insertCategory(record);
+  async create(dto: CreateCategoryDto): Promise<CategoryResponseDto> {
+    const record = await this.prisma.category.create({
+      data: { name: dto.name, description: dto.description },
+    });
     return this.toPublic(record);
   }
 
-  update(id: string, dto: UpdateCategoryDto): CategoryResponseDto {
-    const patch: Partial<Category> = {};
-    if (dto.name !== undefined) {
-      patch.name = dto.name;
-    }
-    if (dto.description !== undefined) {
-      patch.description = dto.description;
-    }
-    if (Object.keys(patch).length === 0) {
+  async update(
+    id: string,
+    dto: UpdateCategoryDto,
+  ): Promise<CategoryResponseDto> {
+    if (dto.name === undefined && dto.description === undefined) {
       throw new BadRequestException('No fields to update');
     }
-    const updated = this.store.updateCategoryRecord(id, patch);
-    if (!updated) {
+
+    const existing = await this.prisma.category.findUnique({ where: { id } });
+    if (!existing) {
       throw new NotFoundException('Category not found');
     }
+
+    const updated = await this.prisma.category.update({
+      where: { id },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name } : undefined),
+        ...(dto.description !== undefined
+          ? { description: dto.description }
+          : undefined),
+      },
+    });
+
     return this.toPublic(updated);
   }
 
-  remove(id: string): void {
-    const deleted = this.store.deleteCategory(id);
-    if (!deleted) {
+  async remove(id: string): Promise<void> {
+    const existing = await this.prisma.category.findUnique({ where: { id } });
+    if (!existing) {
       throw new NotFoundException('Category not found');
     }
+    await this.prisma.category.delete({ where: { id } });
   }
 
-  private toPublic(category: Category): CategoryResponseDto {
+  private toPublic(category: PrismaCategory): CategoryResponseDto {
     return {
       id: category.id,
       name: category.name,

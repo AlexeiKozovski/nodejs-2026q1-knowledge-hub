@@ -3,9 +3,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { randomUUID } from 'crypto';
-import { Article, ArticleStatus } from '../types';
-import { KnowledgeHubStore } from '../storage/knowledge-hub.store';
+import {
+  Article as PrismaArticle,
+  ArticleStatus as PrismaArticleStatus,
+} from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { ArticleStatus } from '../types';
 import { ArticleResponseDto } from './dto/article-response.dto';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { FindArticlesQueryDto } from './dto/find-articles-query.dto';
@@ -13,92 +16,150 @@ import { UpdateArticleDto } from './dto/update-article.dto';
 
 @Injectable()
 export class ArticleService {
-  constructor(private readonly store: KnowledgeHubStore) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  findAll(query: FindArticlesQueryDto): ArticleResponseDto[] {
-    return this.store
-      .findArticles({
-        status: query.status,
-        categoryId: query.categoryId,
-        tag: query.tag,
-      })
-      .map((article: Article) => this.toPublic(article));
+  async findAll(query: FindArticlesQueryDto): Promise<ArticleResponseDto[]> {
+    const articles = await this.prisma.article.findMany({
+      where: {
+        ...(query.status
+          ? { status: this.toPrismaStatus(query.status) }
+          : undefined),
+        ...(query.categoryId ? { categoryId: query.categoryId } : undefined),
+        ...(query.tag ? { tags: { some: { name: query.tag } } } : undefined),
+      },
+      include: {
+        tags: true,
+      },
+    });
+    return articles.map((article) => this.toPublic(article, article.tags));
   }
 
-  findOne(id: string): ArticleResponseDto {
-    const article = this.store.findArticleById(id);
+  async findOne(id: string): Promise<ArticleResponseDto> {
+    const article = await this.prisma.article.findUnique({
+      where: { id },
+      include: { tags: true },
+    });
     if (!article) {
       throw new NotFoundException('Article not found');
     }
-    return this.toPublic(article);
+    return this.toPublic(article, article.tags);
   }
 
-  create(dto: CreateArticleDto): ArticleResponseDto {
-    const now = Date.now();
-    const record: Article = {
-      id: randomUUID(),
-      title: dto.title,
-      content: dto.content,
-      status: dto.status ?? ArticleStatus.DRAFT,
-      authorId: dto.authorId ?? null,
-      categoryId: dto.categoryId ?? null,
-      tags: dto.tags ? [...dto.tags] : [],
-      createdAt: now,
-      updatedAt: now,
-    };
-    this.store.insertArticle(record);
-    return this.toPublic(record);
+  async create(dto: CreateArticleDto): Promise<ArticleResponseDto> {
+    const record = await this.prisma.article.create({
+      data: {
+        title: dto.title,
+        content: dto.content,
+        status: this.toPrismaStatus(dto.status ?? ArticleStatus.DRAFT),
+        authorId: dto.authorId ?? null,
+        categoryId: dto.categoryId ?? null,
+        tags: {
+          connectOrCreate: (dto.tags ?? []).map((tagName) => ({
+            where: { name: tagName },
+            create: { name: tagName },
+          })),
+        },
+      },
+      include: { tags: true },
+    });
+    return this.toPublic(record, record.tags);
   }
 
-  update(id: string, dto: UpdateArticleDto): ArticleResponseDto {
-    const patch: Partial<Article> = {};
-    if (dto.title !== undefined) {
-      patch.title = dto.title;
-    }
-    if (dto.content !== undefined) {
-      patch.content = dto.content;
-    }
-    if (dto.status !== undefined) {
-      patch.status = dto.status;
-    }
-    if (dto.authorId !== undefined) {
-      patch.authorId = dto.authorId;
-    }
-    if (dto.categoryId !== undefined) {
-      patch.categoryId = dto.categoryId;
-    }
-    if (dto.tags !== undefined) {
-      patch.tags = dto.tags;
-    }
-    if (Object.keys(patch).length === 0) {
+  async update(id: string, dto: UpdateArticleDto): Promise<ArticleResponseDto> {
+    const hasAnyField =
+      dto.title !== undefined ||
+      dto.content !== undefined ||
+      dto.status !== undefined ||
+      dto.authorId !== undefined ||
+      dto.categoryId !== undefined ||
+      dto.tags !== undefined;
+    if (!hasAnyField) {
       throw new BadRequestException('No fields to update');
     }
-    patch.updatedAt = Date.now();
-    const updated = this.store.updateArticleRecord(id, patch);
-    if (!updated) {
+
+    const existing = await this.prisma.article.findUnique({ where: { id } });
+    if (!existing) {
       throw new NotFoundException('Article not found');
     }
-    return this.toPublic(updated);
+
+    const updated = await this.prisma.article.update({
+      where: { id },
+      data: {
+        ...(dto.title !== undefined ? { title: dto.title } : undefined),
+        ...(dto.content !== undefined ? { content: dto.content } : undefined),
+        ...(dto.status !== undefined
+          ? { status: this.toPrismaStatus(dto.status) }
+          : undefined),
+        ...(dto.authorId !== undefined
+          ? { authorId: dto.authorId }
+          : undefined),
+        ...(dto.categoryId !== undefined
+          ? { categoryId: dto.categoryId }
+          : undefined),
+        ...(dto.tags !== undefined
+          ? {
+              tags: {
+                set: [],
+                connectOrCreate: dto.tags.map((tagName) => ({
+                  where: { name: tagName },
+                  create: { name: tagName },
+                })),
+              },
+            }
+          : undefined),
+      },
+      include: { tags: true },
+    });
+
+    return this.toPublic(updated, updated.tags);
   }
 
-  remove(id: string): void {
-    const deleted = this.store.deleteArticle(id);
-    if (!deleted) {
+  async remove(id: string): Promise<void> {
+    const existing = await this.prisma.article.findUnique({ where: { id } });
+    if (!existing) {
       throw new NotFoundException('Article not found');
     }
+    await this.prisma.article.delete({ where: { id } });
   }
 
-  private toPublic(article: Article): ArticleResponseDto {
+  private toPublic(
+    article: PrismaArticle,
+    tags: Array<{ name: string }>,
+  ): ArticleResponseDto {
     return {
       id: article.id,
       title: article.title,
       content: article.content,
-      status: article.status,
+      status: this.fromPrismaStatus(article.status),
       authorId: article.authorId,
       categoryId: article.categoryId,
-      tags: [...article.tags],
-      createdAt: article.createdAt,
-      updatedAt: article.updatedAt,
+      tags: tags.map((tag) => tag.name),
+      createdAt: article.createdAt.getTime(),
+      updatedAt: article.updatedAt.getTime(),
     };
+  }
+
+  private toPrismaStatus(status: ArticleStatus): PrismaArticleStatus {
+    switch (status) {
+      case ArticleStatus.DRAFT:
+        return PrismaArticleStatus.DRAFT;
+      case ArticleStatus.PUBLISHED:
+        return PrismaArticleStatus.PUBLISHED;
+      case ArticleStatus.ARCHIVED:
+      default:
+        return PrismaArticleStatus.ARCHIVED;
+    }
+  }
+
+  private fromPrismaStatus(status: PrismaArticleStatus): ArticleStatus {
+    switch (status) {
+      case PrismaArticleStatus.DRAFT:
+        return ArticleStatus.DRAFT;
+      case PrismaArticleStatus.PUBLISHED:
+        return ArticleStatus.PUBLISHED;
+      case PrismaArticleStatus.ARCHIVED:
+      default:
+        return ArticleStatus.ARCHIVED;
+    }
   }
 }
