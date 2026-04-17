@@ -24,6 +24,11 @@ export class KnowledgeHubStore {
     return this.users.find((user: User) => user.id === id);
   }
 
+  findUserByLogin(login: string): User | undefined {
+    const user = this.users.find((u: User) => u.login === login);
+    return user ? { ...user } : undefined;
+  }
+
   insertUser(user: User): void {
     this.users.push(user);
   }

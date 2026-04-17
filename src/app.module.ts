@@ -5,11 +5,12 @@ import { AppController } from './app.controller';
 import { OptionalApiKeyGuard } from './common/guards/optional-api-key.guard';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
-import { PrismaModule } from './prisma/prisma.module';
+import { StorageModule } from './storage/storage.module';
 import { UserModule } from './user/user.module';
 import { ArticleModule } from './article/article.module';
 import { CategoryModule } from './category/category.module';
 import { CommentModule } from './comment/comment.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
   controllers: [AppController],
@@ -18,7 +19,8 @@ import { CommentModule } from './comment/comment.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
-    PrismaModule,
+    StorageModule,
+    AuthModule,
     UserModule,
     ArticleModule,
     CategoryModule,
