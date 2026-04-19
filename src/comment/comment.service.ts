@@ -1,10 +1,13 @@
 import {
+  ForbiddenException,
   Injectable,
   NotFoundException,
   UnprocessableEntityException,
 } from '@nestjs/common';
 import { Comment as PrismaComment } from '@prisma/client';
+import { AuthenticatedUser } from '../auth/authenticated-user';
 import { PrismaService } from '../prisma/prisma.service';
+import { UserRole } from '../types';
 import { CommentResponseDto } from './dto/comment-response.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { FindCommentsQueryDto } from './dto/find-comments-query.dto';
@@ -30,7 +33,19 @@ export class CommentService {
     return this.toPublic(comment);
   }
 
-  async create(dto: CreateCommentDto): Promise<CommentResponseDto> {
+  async create(
+    dto: CreateCommentDto,
+    actor: AuthenticatedUser,
+  ): Promise<CommentResponseDto> {
+    if (actor.role === UserRole.EDITOR) {
+      if (
+        dto.authorId !== undefined &&
+        dto.authorId !== null &&
+        dto.authorId !== actor.userId
+      ) {
+        throw new ForbiddenException();
+      }
+    }
     const article = await this.prisma.article.findUnique({
       where: { id: dto.articleId },
     });
@@ -49,12 +64,23 @@ export class CommentService {
     return this.toPublic(record);
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, actor: AuthenticatedUser): Promise<void> {
     const existing = await this.prisma.comment.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundException('Comment not found');
     }
-    await this.prisma.comment.delete({ where: { id } });
+    if (actor.role === UserRole.ADMIN) {
+      await this.prisma.comment.delete({ where: { id } });
+      return;
+    }
+    if (actor.role === UserRole.EDITOR) {
+      if (existing.authorId !== actor.userId) {
+        throw new ForbiddenException();
+      }
+      await this.prisma.comment.delete({ where: { id } });
+      return;
+    }
+    throw new ForbiddenException();
   }
 
   private toPublic(comment: PrismaComment): CommentResponseDto {

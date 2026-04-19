@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -7,8 +8,9 @@ import {
   Article as PrismaArticle,
   ArticleStatus as PrismaArticleStatus,
 } from '@prisma/client';
+import { AuthenticatedUser } from '../auth/authenticated-user';
 import { PrismaService } from '../prisma/prisma.service';
-import { ArticleStatus } from '../types';
+import { ArticleStatus, UserRole } from '../types';
 import { ArticleResponseDto } from './dto/article-response.dto';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { FindArticlesQueryDto } from './dto/find-articles-query.dto';
@@ -45,7 +47,19 @@ export class ArticleService {
     return this.toPublic(article, article.tags);
   }
 
-  async create(dto: CreateArticleDto): Promise<ArticleResponseDto> {
+  async create(
+    dto: CreateArticleDto,
+    actor: AuthenticatedUser,
+  ): Promise<ArticleResponseDto> {
+    if (actor.role === UserRole.EDITOR) {
+      if (
+        dto.authorId !== undefined &&
+        dto.authorId !== null &&
+        dto.authorId !== actor.userId
+      ) {
+        throw new ForbiddenException();
+      }
+    }
     const record = await this.prisma.article.create({
       data: {
         title: dto.title,
@@ -65,7 +79,11 @@ export class ArticleService {
     return this.toPublic(record, record.tags);
   }
 
-  async update(id: string, dto: UpdateArticleDto): Promise<ArticleResponseDto> {
+  async update(
+    id: string,
+    dto: UpdateArticleDto,
+    actor: AuthenticatedUser,
+  ): Promise<ArticleResponseDto> {
     const hasAnyField =
       dto.title !== undefined ||
       dto.content !== undefined ||
@@ -80,6 +98,12 @@ export class ArticleService {
     const existing = await this.prisma.article.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundException('Article not found');
+    }
+
+    if (actor.role === UserRole.EDITOR) {
+      if (existing.authorId !== actor.userId) {
+        throw new ForbiddenException();
+      }
     }
 
     const updated = await this.prisma.article.update({

@@ -1,4 +1,5 @@
 import { PrismaClient, ArticleStatus, UserRole } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
@@ -9,18 +10,24 @@ async function main(): Promise<void> {
   await prisma.tag.deleteMany();
   await prisma.user.deleteMany();
 
+  const saltRounds = 10;
+  const [adminPassword, editorPassword] = await Promise.all([
+    bcrypt.hash('admin123', saltRounds),
+    bcrypt.hash('editor123', saltRounds),
+  ]);
+
   const [admin, editor] = await Promise.all([
     prisma.user.create({
       data: {
         login: 'admin',
-        password: 'admin123',
+        password: adminPassword,
         role: UserRole.ADMIN,
       },
     }),
     prisma.user.create({
       data: {
         login: 'editor',
-        password: 'editor123',
+        password: editorPassword,
         role: UserRole.EDITOR,
       },
     }),

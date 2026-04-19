@@ -5,7 +5,7 @@ import { AppController } from './app.controller';
 import { OptionalApiKeyGuard } from './common/guards/optional-api-key.guard';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
-import { StorageModule } from './storage/storage.module';
+import { PrismaModule } from './prisma/prisma.module';
 import { UserModule } from './user/user.module';
 import { ArticleModule } from './article/article.module';
 import { CategoryModule } from './category/category.module';
@@ -19,7 +19,7 @@ import { AuthModule } from './auth/auth.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
-    StorageModule,
+    PrismaModule,
     AuthModule,
     UserModule,
     ArticleModule,

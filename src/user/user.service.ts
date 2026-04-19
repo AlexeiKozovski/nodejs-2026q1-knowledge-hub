@@ -1,25 +1,38 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { User as PrismaUser, UserRole as PrismaUserRole } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
+import { AuthenticatedUser } from '../auth/authenticated-user';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserRole } from '../types';
 import { CreateUserDto } from './dto/create-user.dto';
-import { UpdatePasswordDto } from './dto/update-password.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 
 @Injectable()
 export class UserService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
 
   async findAll(): Promise<UserResponseDto[]> {
     const users = await this.prisma.user.findMany();
     return users.map((user) => this.toPublic(user));
   }
 
-  async findOne(id: string): Promise<UserResponseDto> {
+  async findOne(
+    id: string,
+    actor: AuthenticatedUser,
+  ): Promise<UserResponseDto> {
+    if (actor.role === UserRole.VIEWER && actor.userId !== id) {
+      throw new ForbiddenException();
+    }
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) {
       throw new NotFoundException('User not found');
@@ -28,35 +41,76 @@ export class UserService {
   }
 
   async create(dto: CreateUserDto): Promise<UserResponseDto> {
+    const saltRounds = this.getSaltRounds();
+    const passwordHash = await bcrypt.hash(dto.password, saltRounds);
     const record = await this.prisma.user.create({
       data: {
         login: dto.login,
-        password: dto.password,
+        password: passwordHash,
         role: this.toPrismaRole(dto.role ?? UserRole.VIEWER),
       },
     });
     return this.toPublic(record);
   }
 
-  async updatePassword(
+  async updateUser(
     id: string,
-    dto: UpdatePasswordDto,
+    dto: UpdateUserDto,
+    actor: AuthenticatedUser,
   ): Promise<UserResponseDto> {
+    const hasRole = dto.role !== undefined;
+    const hasPassword =
+      dto.oldPassword !== undefined || dto.newPassword !== undefined;
+
+    if (!hasRole && !hasPassword) {
+      throw new BadRequestException('No fields to update');
+    }
+    if (hasPassword && (!dto.oldPassword || !dto.newPassword)) {
+      throw new BadRequestException('oldPassword and newPassword are required');
+    }
+
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) {
       throw new NotFoundException('User not found');
     }
-    if (user.password !== dto.oldPassword) {
+
+    const isAdmin = actor.role === UserRole.ADMIN;
+    const isSelf = actor.userId === id;
+
+    if (!isAdmin && !isSelf) {
+      throw new ForbiddenException();
+    }
+
+    if (hasRole) {
+      if (!isAdmin) {
+        throw new ForbiddenException();
+      }
+      const updated = await this.prisma.user.update({
+        where: { id },
+        data: { role: this.toPrismaRole(dto.role!) },
+      });
+      return this.toPublic(updated);
+    }
+
+    const match = await bcrypt.compare(dto.oldPassword!, user.password);
+    if (!match) {
       throw new ForbiddenException('Old password is incorrect');
     }
+    const passwordHash = await bcrypt.hash(
+      dto.newPassword!,
+      this.getSaltRounds(),
+    );
     const fresh = await this.prisma.user.update({
       where: { id },
-      data: { password: dto.newPassword },
+      data: { password: passwordHash },
     });
     return this.toPublic(fresh);
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string, actor: AuthenticatedUser): Promise<void> {
+    if (actor.role !== UserRole.ADMIN) {
+      throw new ForbiddenException();
+    }
     const existing = await this.prisma.user.findUnique({ where: { id } });
     if (!existing) {
       throw new NotFoundException('User not found');
@@ -66,8 +120,15 @@ export class UserService {
         where: { authorId: id },
         data: { authorId: null },
       }),
+      this.prisma.comment.deleteMany({ where: { authorId: id } }),
       this.prisma.user.delete({ where: { id } }),
     ]);
+  }
+
+  private getSaltRounds(): number {
+    const raw = this.config.get<string>('CRYPT_SALT');
+    const n = raw !== undefined ? Number.parseInt(raw, 10) : Number.NaN;
+    return Number.isFinite(n) && n > 0 ? n : 10;
   }
 
   private toPublic(user: PrismaUser): UserResponseDto {

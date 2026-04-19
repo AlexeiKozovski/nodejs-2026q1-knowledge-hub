@@ -9,9 +9,11 @@ import {
   ParseUUIDPipe,
   Post,
   Put,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiBearerAuth,
   ApiCreatedResponse,
   ApiNoContentResponse,
   ApiNotFoundResponse,
@@ -19,12 +21,18 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { Roles } from '../common/decorators/roles.decorator';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { UserRole } from '../types';
+import { CategoryService } from './category.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { CategoryResponseDto } from './dto/category-response.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
-import { CategoryService } from './category.service';
 
 @ApiTags('categories')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 @Controller('category')
 export class CategoryController {
   constructor(private readonly categoryService: CategoryService) {}
@@ -48,6 +56,8 @@ export class CategoryController {
   }
 
   @Post()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create new category' })
   @ApiCreatedResponse({ type: CategoryResponseDto })
@@ -57,6 +67,8 @@ export class CategoryController {
   }
 
   @Put(':id')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Update category info' })
   @ApiOkResponse({ type: CategoryResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid id or body' })
@@ -69,6 +81,8 @@ export class CategoryController {
   }
 
   @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete category' })
   @ApiNoContentResponse()

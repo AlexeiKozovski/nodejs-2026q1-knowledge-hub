@@ -5,12 +5,12 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { UserRole as PrismaUserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
-import { randomUUID } from 'crypto';
 import * as jwt from 'jsonwebtoken';
 import type { SignOptions } from 'jsonwebtoken';
-import { User, UserRole } from '../types';
-import { KnowledgeHubStore } from '../storage/knowledge-hub.store';
+import { PrismaService } from '../prisma/prisma.service';
+import { UserRole } from '../types';
 import { UserResponseDto } from '../user/dto/user-response.dto';
 import { LoginDto } from './dto/login.dto';
 import { SignupDto } from './dto/signup.dto';
@@ -20,31 +20,36 @@ type TokenPair = { accessToken: string; refreshToken: string };
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly store: KnowledgeHubStore,
+    private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {}
 
   async signup(dto: SignupDto): Promise<UserResponseDto> {
-    if (this.store.findUserByLogin(dto.login)) {
+    const existing = await this.prisma.user.findUnique({
+      where: { login: dto.login },
+    });
+    if (existing) {
       throw new BadRequestException('Login is already taken');
     }
+    const count = await this.prisma.user.count();
+    const prismaRole =
+      count === 0 ? PrismaUserRole.ADMIN : PrismaUserRole.VIEWER;
     const saltRounds = this.getSaltRounds();
     const passwordHash = await bcrypt.hash(dto.password, saltRounds);
-    const now = Date.now();
-    const record: User = {
-      id: randomUUID(),
-      login: dto.login,
-      password: passwordHash,
-      role: UserRole.VIEWER,
-      createdAt: now,
-      updatedAt: now,
-    };
-    this.store.insertUser(record);
+    const record = await this.prisma.user.create({
+      data: {
+        login: dto.login,
+        password: passwordHash,
+        role: prismaRole,
+      },
+    });
     return this.toPublic(record);
   }
 
   async login(dto: LoginDto): Promise<TokenPair> {
-    const user = this.store.findUserByLogin(dto.login);
+    const user = await this.prisma.user.findUnique({
+      where: { login: dto.login },
+    });
     if (!user) {
       throw new ForbiddenException('Invalid login or password');
     }
@@ -70,8 +75,12 @@ export class AuthService {
     if (!userId || !login || !this.isUserRole(role)) {
       throw new ForbiddenException('Invalid or expired refresh token');
     }
-    const user = this.store.findUserById(userId);
-    if (!user || user.login !== login || user.role !== role) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (
+      !user ||
+      user.login !== login ||
+      this.fromPrismaRole(user.role) !== role
+    ) {
       throw new ForbiddenException('Invalid or expired refresh token');
     }
     return this.issueTokens(user);
@@ -89,7 +98,11 @@ export class AuthService {
     return (body as { refreshToken: string }).refreshToken;
   }
 
-  private issueTokens(user: User): TokenPair {
+  private issueTokens(user: {
+    id: string;
+    login: string;
+    role: PrismaUserRole;
+  }): TokenPair {
     const accessSecret = this.getAccessSecret();
     const refreshSecret = this.getRefreshSecret();
     const accessTtl = this.getAccessTtl();
@@ -97,7 +110,7 @@ export class AuthService {
     const payload = {
       userId: user.id,
       login: user.login,
-      role: user.role,
+      role: this.fromPrismaRole(user.role),
     };
     const accessSignOptions = { expiresIn: accessTtl } as SignOptions;
     const refreshSignOptions = { expiresIn: refreshTtl } as SignOptions;
@@ -106,14 +119,32 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
-  private toPublic(user: User): UserResponseDto {
+  private toPublic(user: {
+    id: string;
+    login: string;
+    role: PrismaUserRole;
+    createdAt: Date;
+    updatedAt: Date;
+  }): UserResponseDto {
     return {
       id: user.id,
       login: user.login,
-      role: user.role,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
+      role: this.fromPrismaRole(user.role),
+      createdAt: user.createdAt.getTime(),
+      updatedAt: user.updatedAt.getTime(),
     };
+  }
+
+  private fromPrismaRole(role: PrismaUserRole): UserRole {
+    switch (role) {
+      case PrismaUserRole.ADMIN:
+        return UserRole.ADMIN;
+      case PrismaUserRole.EDITOR:
+        return UserRole.EDITOR;
+      case PrismaUserRole.VIEWER:
+      default:
+        return UserRole.VIEWER;
+    }
   }
 
   private getSaltRounds(): number {
