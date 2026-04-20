@@ -51,12 +51,10 @@ export class ArticleService {
     dto: CreateArticleDto,
     actor: AuthenticatedUser,
   ): Promise<ArticleResponseDto> {
+    const authorId =
+      actor.role === UserRole.EDITOR ? actor.userId : (dto.authorId ?? null);
     if (actor.role === UserRole.EDITOR) {
-      if (
-        dto.authorId !== undefined &&
-        dto.authorId !== null &&
-        dto.authorId !== actor.userId
-      ) {
+      if (dto.authorId !== undefined && dto.authorId !== actor.userId) {
         throw new ForbiddenException();
       }
     }
@@ -65,7 +63,7 @@ export class ArticleService {
         title: dto.title,
         content: dto.content,
         status: this.toPrismaStatus(dto.status ?? ArticleStatus.DRAFT),
-        authorId: dto.authorId ?? null,
+        authorId,
         categoryId: dto.categoryId ?? null,
         tags: {
           connectOrCreate: (dto.tags ?? []).map((tagName) => ({
@@ -102,6 +100,9 @@ export class ArticleService {
 
     if (actor.role === UserRole.EDITOR) {
       if (existing.authorId !== actor.userId) {
+        throw new ForbiddenException();
+      }
+      if (dto.authorId !== undefined && dto.authorId !== actor.userId) {
         throw new ForbiddenException();
       }
     }

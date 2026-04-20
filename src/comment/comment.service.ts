@@ -37,12 +37,10 @@ export class CommentService {
     dto: CreateCommentDto,
     actor: AuthenticatedUser,
   ): Promise<CommentResponseDto> {
+    const authorId =
+      actor.role === UserRole.EDITOR ? actor.userId : (dto.authorId ?? null);
     if (actor.role === UserRole.EDITOR) {
-      if (
-        dto.authorId !== undefined &&
-        dto.authorId !== null &&
-        dto.authorId !== actor.userId
-      ) {
+      if (dto.authorId !== undefined && dto.authorId !== actor.userId) {
         throw new ForbiddenException();
       }
     }
@@ -58,7 +56,7 @@ export class CommentService {
       data: {
         content: dto.content,
         articleId: dto.articleId,
-        authorId: dto.authorId ?? null,
+        authorId,
       },
     });
     return this.toPublic(record);

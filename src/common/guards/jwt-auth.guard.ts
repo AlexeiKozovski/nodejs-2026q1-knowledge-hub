@@ -4,6 +4,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { JsonWebTokenError, TokenExpiredError } from 'jsonwebtoken';
 import { ConfigService } from '@nestjs/config';
 import * as jwt from 'jsonwebtoken';
 import { AuthenticatedUser } from '../../auth/authenticated-user';
@@ -19,12 +20,17 @@ export class JwtAuthGuard implements CanActivate {
       user?: AuthenticatedUser;
     }>();
     const header = request.headers.authorization;
-    if (!header?.startsWith('Bearer ')) {
-      throw new UnauthorizedException();
+    if (!header) {
+      throw new UnauthorizedException('Authorization header is missing');
+    }
+    if (!header.startsWith('Bearer ')) {
+      throw new UnauthorizedException(
+        'Authorization header must use Bearer scheme',
+      );
     }
     const token = header.slice('Bearer '.length).trim();
     if (!token) {
-      throw new UnauthorizedException();
+      throw new UnauthorizedException('Access token is missing');
     }
     const secret =
       this.config.get<string>('JWT_SECRET') ??
@@ -46,12 +52,21 @@ export class JwtAuthGuard implements CanActivate {
         typeof login !== 'string' ||
         !this.isUserRole(role)
       ) {
-        throw new UnauthorizedException();
+        throw new UnauthorizedException('Access token payload is invalid');
       }
       request.user = { userId, login, role };
       return true;
-    } catch {
-      throw new UnauthorizedException();
+    } catch (error: unknown) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      if (error instanceof TokenExpiredError) {
+        throw new UnauthorizedException('Access token has expired');
+      }
+      if (error instanceof JsonWebTokenError) {
+        throw new UnauthorizedException('Access token is invalid');
+      }
+      throw new UnauthorizedException('Access token validation failed');
     }
   }
 

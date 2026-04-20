@@ -7,6 +7,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { UserRole as PrismaUserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { createHash } from 'crypto';
 import * as jwt from 'jsonwebtoken';
 import type { SignOptions } from 'jsonwebtoken';
 import { PrismaService } from '../prisma/prisma.service';
@@ -19,6 +20,8 @@ type TokenPair = { accessToken: string; refreshToken: string };
 
 @Injectable()
 export class AuthService {
+  private readonly revokedRefreshTokens = new Map<string, number>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
@@ -62,6 +65,10 @@ export class AuthService {
 
   async refresh(body: unknown): Promise<TokenPair> {
     const refreshToken = this.extractRefreshToken(body);
+    this.cleanupRevokedTokens();
+    if (this.isRefreshTokenRevoked(refreshToken)) {
+      throw new ForbiddenException('Invalid or expired refresh token');
+    }
     const refreshSecret = this.getRefreshSecret();
     let payload: jwt.JwtPayload;
     try {
@@ -83,7 +90,20 @@ export class AuthService {
     ) {
       throw new ForbiddenException('Invalid or expired refresh token');
     }
+    this.revokeRefreshToken(refreshToken, payload.exp);
     return this.issueTokens(user);
+  }
+
+  async logout(body: unknown): Promise<void> {
+    const refreshToken = this.extractRefreshToken(body);
+    const refreshSecret = this.getRefreshSecret();
+    let payload: jwt.JwtPayload;
+    try {
+      payload = jwt.verify(refreshToken, refreshSecret) as jwt.JwtPayload;
+    } catch {
+      throw new ForbiddenException('Invalid or expired refresh token');
+    }
+    this.revokeRefreshToken(refreshToken, payload.exp);
   }
 
   private extractRefreshToken(body: unknown): string {
@@ -197,5 +217,39 @@ export class AuthService {
       value === UserRole.EDITOR ||
       value === UserRole.VIEWER
     );
+  }
+
+  private revokeRefreshToken(token: string, exp?: number): void {
+    const expiresAtSeconds =
+      typeof exp === 'number' && Number.isFinite(exp)
+        ? exp
+        : Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60;
+    this.revokedRefreshTokens.set(this.hashToken(token), expiresAtSeconds);
+  }
+
+  private isRefreshTokenRevoked(token: string): boolean {
+    const hash = this.hashToken(token);
+    const expiresAt = this.revokedRefreshTokens.get(hash);
+    if (expiresAt === undefined) {
+      return false;
+    }
+    if (expiresAt <= Math.floor(Date.now() / 1000)) {
+      this.revokedRefreshTokens.delete(hash);
+      return false;
+    }
+    return true;
+  }
+
+  private cleanupRevokedTokens(): void {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    for (const [hash, expiresAt] of this.revokedRefreshTokens.entries()) {
+      if (expiresAt <= nowSeconds) {
+        this.revokedRefreshTokens.delete(hash);
+      }
+    }
+  }
+
+  private hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
   }
 }

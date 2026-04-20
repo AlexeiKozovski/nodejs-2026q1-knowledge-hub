@@ -1,6 +1,14 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiBody,
   ApiCreatedResponse,
   ApiForbiddenResponse,
   ApiOkResponse,
@@ -9,6 +17,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { UserResponseDto } from '../user/dto/user-response.dto';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
@@ -22,12 +31,19 @@ class TokensResponseDto {
   refreshToken!: string;
 }
 
+class RefreshTokenRequestDto {
+  @ApiProperty()
+  refreshToken!: string;
+}
+
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('signup')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Register a new user' })
   @ApiCreatedResponse({
@@ -40,6 +56,8 @@ export class AuthController {
   }
 
   @Post('login')
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login and obtain tokens' })
   @ApiOkResponse({ type: TokensResponseDto })
@@ -57,5 +75,17 @@ export class AuthController {
   @ApiForbiddenResponse({ description: 'Invalid or expired refresh token' })
   async refresh(@Body() body: unknown): Promise<TokensResponseDto> {
     return this.authService.refresh(body);
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Invalidate refresh token (logout)' })
+  @ApiBody({ type: RefreshTokenRequestDto })
+  @ApiOkResponse({ description: 'Successfully logged out' })
+  @ApiUnauthorizedResponse({ description: 'Missing refresh token' })
+  @ApiForbiddenResponse({ description: 'Invalid or expired refresh token' })
+  async logout(@Body() body: unknown): Promise<{ message: string }> {
+    await this.authService.logout(body);
+    return { message: 'Logged out successfully' };
   }
 }
