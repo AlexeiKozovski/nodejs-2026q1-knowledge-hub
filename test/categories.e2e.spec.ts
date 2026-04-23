@@ -168,7 +168,8 @@ describe('Category (e2e)', () => {
         .get(categoriesRoutes.getById(createdId))
         .set(commonHeaders);
 
-      const { id: updatedId, name, description } = updatedCategoryResponse.body;
+      const { id: updatedId, name, description } =
+        updatedCategoryResponse.body;
 
       expect(name).toBe(createCategoryDto.name);
       expect(description).toBe(updatedDescription);

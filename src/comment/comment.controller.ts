@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
@@ -7,11 +8,12 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
-  Body,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiBearerAuth,
   ApiCreatedResponse,
   ApiNoContentResponse,
   ApiNotFoundResponse,
@@ -21,12 +23,20 @@ import {
   ApiTags,
   ApiUnprocessableEntityResponse,
 } from '@nestjs/swagger';
+import { AuthenticatedUser } from '../auth/authenticated-user';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { UserRole } from '../types';
 import { CommentService } from './comment.service';
 import { CommentResponseDto } from './dto/comment-response.dto';
 import { CreateCommentDto } from './dto/create-comment.dto';
 import { FindCommentsQueryDto } from './dto/find-comments-query.dto';
 
 @ApiTags('comments')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 @Controller('comment')
 export class CommentController {
   constructor(private readonly commentService: CommentService) {}
@@ -61,6 +71,8 @@ export class CommentController {
   }
 
   @Post()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.EDITOR, UserRole.ADMIN)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create new comment' })
   @ApiCreatedResponse({ type: CommentResponseDto })
@@ -68,11 +80,16 @@ export class CommentController {
   @ApiUnprocessableEntityResponse({
     description: 'articleId does not reference an existing article',
   })
-  create(@Body() dto: CreateCommentDto): Promise<CommentResponseDto> {
-    return this.commentService.create(dto);
+  create(
+    @Body() dto: CreateCommentDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<CommentResponseDto> {
+    return this.commentService.create(dto, actor);
   }
 
   @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.EDITOR, UserRole.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete comment' })
   @ApiNoContentResponse()
@@ -82,7 +99,8 @@ export class CommentController {
   @ApiNotFoundResponse({ description: 'Comment not found' })
   async remove(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @CurrentUser() actor: AuthenticatedUser,
   ): Promise<void> {
-    await this.commentService.remove(id);
+    await this.commentService.remove(id, actor);
   }
 }

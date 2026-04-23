@@ -10,9 +10,11 @@ import {
   Post,
   Put,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
+  ApiBearerAuth,
   ApiCreatedResponse,
   ApiNoContentResponse,
   ApiNotFoundResponse,
@@ -21,7 +23,12 @@ import {
   ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
-import { ArticleStatus } from '../types';
+import { AuthenticatedUser } from '../auth/authenticated-user';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { ArticleStatus, UserRole } from '../types';
 import { ArticleService } from './article.service';
 import { ArticleResponseDto } from './dto/article-response.dto';
 import { CreateArticleDto } from './dto/create-article.dto';
@@ -29,6 +36,8 @@ import { FindArticlesQueryDto } from './dto/find-articles-query.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 
 @ApiTags('articles')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 @Controller('article')
 export class ArticleController {
   constructor(private readonly articleService: ArticleService) {}
@@ -59,15 +68,22 @@ export class ArticleController {
   }
 
   @Post()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.EDITOR, UserRole.ADMIN)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Create article' })
   @ApiCreatedResponse({ type: ArticleResponseDto })
   @ApiBadRequestResponse({ description: 'Validation failed' })
-  create(@Body() dto: CreateArticleDto): Promise<ArticleResponseDto> {
-    return this.articleService.create(dto);
+  create(
+    @Body() dto: CreateArticleDto,
+    @CurrentUser() actor: AuthenticatedUser,
+  ): Promise<ArticleResponseDto> {
+    return this.articleService.create(dto, actor);
   }
 
   @Put(':id')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.EDITOR, UserRole.ADMIN)
   @ApiOperation({ summary: 'Update article info' })
   @ApiOkResponse({ type: ArticleResponseDto })
   @ApiBadRequestResponse({ description: 'Invalid id or body' })
@@ -75,11 +91,14 @@ export class ArticleController {
   update(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() dto: UpdateArticleDto,
+    @CurrentUser() actor: AuthenticatedUser,
   ): Promise<ArticleResponseDto> {
-    return this.articleService.update(id, dto);
+    return this.articleService.update(id, dto, actor);
   }
 
   @Delete(':id')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Delete article' })
   @ApiNoContentResponse()
