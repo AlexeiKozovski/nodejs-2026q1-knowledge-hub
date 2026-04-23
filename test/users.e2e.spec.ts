@@ -6,7 +6,11 @@ import {
   shouldAuthorizationBeTested,
   removeTokenUser,
 } from './utils';
-import { usersRoutes, articlesRoutes, commentsRoutes } from './endpoints';
+import {
+  usersRoutes,
+  articlesRoutes,
+  commentsRoutes,
+} from './endpoints';
 
 const createUserDto = {
   login: 'TEST_LOGIN',

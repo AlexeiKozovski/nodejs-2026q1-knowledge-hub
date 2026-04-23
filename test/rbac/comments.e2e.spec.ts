@@ -29,19 +29,11 @@ describe('RBAC - Comments (e2e)', () => {
     adminHeaders = { ...headers, Authorization: adminResult.token };
     adminUserId = adminResult.mockUserId;
 
-    const editorResult = await getUserTokenByRole(
-      request,
-      'editor',
-      adminHeaders,
-    );
+    const editorResult = await getUserTokenByRole(request, 'editor', adminHeaders);
     editorHeaders = { ...headers, Authorization: editorResult.token };
     editorUserId = editorResult.userId;
 
-    const viewerResult = await getUserTokenByRole(
-      request,
-      'viewer',
-      adminHeaders,
-    );
+    const viewerResult = await getUserTokenByRole(request, 'viewer', adminHeaders);
     viewerHeaders = { ...headers, Authorization: viewerResult.token };
     viewerUserId = viewerResult.userId;
 
@@ -65,9 +57,7 @@ describe('RBAC - Comments (e2e)', () => {
     if (!shouldAuthorizationBeTested) return;
 
     if (testArticleId) {
-      await request
-        .delete(articlesRoutes.delete(testArticleId))
-        .set(adminHeaders);
+      await request.delete(articlesRoutes.delete(testArticleId)).set(adminHeaders);
     }
     if (viewerUserId) {
       await removeTokenUser(request, viewerUserId, adminHeaders);
