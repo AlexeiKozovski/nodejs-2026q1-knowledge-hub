@@ -39,7 +39,50 @@ PORT=4000
 | ---------- | ------------------------------------------------ | ------- |
 | `PORT`     | HTTP port the server listens on                  | `4000`  |
 | `API_KEY`  | If set, every request must send header `x-api-key` with this value (Swagger at `/doc` is excluded). Omit for local development and tests. | _(unset)_ |
+| `POSTGRES_USER` | Database user (Docker Compose / future Prisma) | _(see `.env.example`)_ |
+| `POSTGRES_PASSWORD` | Database password | _(see `.env.example`)_ |
+| `POSTGRES_DB` | Database name | _(see `.env.example`)_ |
+| `POSTGRES_HOST` | Database hostname (`db` inside Compose network) | `db` |
+| `POSTGRES_PORT` | Database port | `5432` |
 
+## Docker
+
+Build and run the API together with PostgreSQL:
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+The API is mapped to **port 4000** (`4000:4000`). Keep `PORT=4000` in `.env` when using this mapping. PostgreSQL is available on **5432** with data in the named volume `postgres_data`. Services use the bridge network **`knowledge-hub`**.
+
+- **Health check:** `GET /` returns `{ "status": "ok" }` (used by the container health check).
+- **Adminer** (optional UI for the database): `docker compose --profile debug up --build`, then open `http://localhost:8080` and use server **`db`**, user / password / database from your `.env`.
+
+### Docker Hub image
+
+After you build and push the image from this repository, add your own link here (replace with your Docker Hub namespace):
+
+**https://hub.docker.com/r/alexeikozovski/knowledge-hub**
+
+Example build and push:
+
+```bash
+docker build -t alexeikozovski/knowledge-hub:latest .
+docker push alexeikozovski/knowledge-hub:latest
+```
+
+### Image vulnerability scan
+
+Scan the built image before publishing, for example:
+
+```bash
+docker scout cves alexeikozovski/knowledge-hub:latest
+# or
+trivy image alexeikozovski/knowledge-hub:latest
+```
+
+Copy the summary (including whether any **critical** CVEs are present) into your pull request description, as required by the assignment.
 
 ## Running the application
 
