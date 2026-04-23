@@ -32,7 +32,7 @@ export class CategoryController {
   @Get()
   @ApiOperation({ summary: 'Get all categories' })
   @ApiOkResponse({ type: CategoryResponseDto, isArray: true })
-  findAll(): CategoryResponseDto[] {
+  findAll(): Promise<CategoryResponseDto[]> {
     return this.categoryService.findAll();
   }
 
@@ -43,7 +43,7 @@ export class CategoryController {
   @ApiNotFoundResponse({ description: 'Category not found' })
   findOne(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
-  ): CategoryResponseDto {
+  ): Promise<CategoryResponseDto> {
     return this.categoryService.findOne(id);
   }
 
@@ -52,7 +52,7 @@ export class CategoryController {
   @ApiOperation({ summary: 'Create new category' })
   @ApiCreatedResponse({ type: CategoryResponseDto })
   @ApiBadRequestResponse({ description: 'Validation failed' })
-  create(@Body() dto: CreateCategoryDto): CategoryResponseDto {
+  create(@Body() dto: CreateCategoryDto): Promise<CategoryResponseDto> {
     return this.categoryService.create(dto);
   }
 
@@ -64,7 +64,7 @@ export class CategoryController {
   update(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() dto: UpdateCategoryDto,
-  ): CategoryResponseDto {
+  ): Promise<CategoryResponseDto> {
     return this.categoryService.update(id, dto);
   }
 
@@ -74,7 +74,9 @@ export class CategoryController {
   @ApiNoContentResponse()
   @ApiBadRequestResponse({ description: 'Invalid category id (not a UUID v4)' })
   @ApiNotFoundResponse({ description: 'Category not found' })
-  remove(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string): void {
-    this.categoryService.remove(id);
+  async remove(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<void> {
+    await this.categoryService.remove(id);
   }
 }

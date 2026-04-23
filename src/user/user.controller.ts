@@ -33,7 +33,7 @@ export class UserController {
   @Get()
   @ApiOperation({ summary: 'Get all users' })
   @ApiOkResponse({ type: UserResponseDto, isArray: true })
-  findAll(): UserResponseDto[] {
+  findAll(): Promise<UserResponseDto[]> {
     return this.userService.findAll();
   }
 
@@ -44,7 +44,7 @@ export class UserController {
   @ApiNotFoundResponse({ description: 'User not found' })
   findOne(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
-  ): UserResponseDto {
+  ): Promise<UserResponseDto> {
     return this.userService.findOne(id);
   }
 
@@ -53,7 +53,7 @@ export class UserController {
   @ApiOperation({ summary: 'Create user' })
   @ApiCreatedResponse({ type: UserResponseDto })
   @ApiBadRequestResponse({ description: 'Validation failed' })
-  create(@Body() dto: CreateUserDto): UserResponseDto {
+  create(@Body() dto: CreateUserDto): Promise<UserResponseDto> {
     return this.userService.create(dto);
   }
 
@@ -66,7 +66,7 @@ export class UserController {
   updatePassword(
     @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
     @Body() dto: UpdatePasswordDto,
-  ): UserResponseDto {
+  ): Promise<UserResponseDto> {
     return this.userService.updatePassword(id, dto);
   }
 
@@ -76,7 +76,9 @@ export class UserController {
   @ApiNoContentResponse()
   @ApiBadRequestResponse({ description: 'Invalid user id (not a UUID v4)' })
   @ApiNotFoundResponse({ description: 'User not found' })
-  remove(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string): void {
-    this.userService.remove(id);
+  async remove(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+  ): Promise<void> {
+    await this.userService.remove(id);
   }
 }

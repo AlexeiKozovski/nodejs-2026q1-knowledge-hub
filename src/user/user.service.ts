@@ -3,78 +3,104 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { randomUUID } from 'crypto';
-import { User, UserRole } from '../types';
-import { KnowledgeHubStore } from '../storage/knowledge-hub.store';
+import { User as PrismaUser, UserRole as PrismaUserRole } from '@prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { UserRole } from '../types';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdatePasswordDto } from './dto/update-password.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 
 @Injectable()
 export class UserService {
-  constructor(private readonly store: KnowledgeHubStore) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  findAll(): UserResponseDto[] {
-    return this.store.getAllUsers().map((user) => this.toPublic(user));
+  async findAll(): Promise<UserResponseDto[]> {
+    const users = await this.prisma.user.findMany();
+    return users.map((user) => this.toPublic(user));
   }
 
-  findOne(id: string): UserResponseDto {
-    const user = this.store.findUserById(id);
+  async findOne(id: string): Promise<UserResponseDto> {
+    const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) {
       throw new NotFoundException('User not found');
     }
     return this.toPublic(user);
   }
 
-  create(dto: CreateUserDto): UserResponseDto {
-    const now = Date.now();
-    const role = dto.role ?? UserRole.VIEWER;
-    const record: User = {
-      id: randomUUID(),
-      login: dto.login,
-      password: dto.password,
-      role,
-      createdAt: now,
-      updatedAt: now,
-    };
-    this.store.insertUser(record);
+  async create(dto: CreateUserDto): Promise<UserResponseDto> {
+    const record = await this.prisma.user.create({
+      data: {
+        login: dto.login,
+        password: dto.password,
+        role: this.toPrismaRole(dto.role ?? UserRole.VIEWER),
+      },
+    });
     return this.toPublic(record);
   }
 
-  updatePassword(id: string, dto: UpdatePasswordDto): UserResponseDto {
-    const user = this.store.findUserByIdMutable(id);
+  async updatePassword(
+    id: string,
+    dto: UpdatePasswordDto,
+  ): Promise<UserResponseDto> {
+    const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) {
       throw new NotFoundException('User not found');
     }
     if (user.password !== dto.oldPassword) {
       throw new ForbiddenException('Old password is incorrect');
     }
-    const updatedAt = Date.now();
-    this.store.updateUserRecord(id, {
-      password: dto.newPassword,
-      updatedAt,
+    const fresh = await this.prisma.user.update({
+      where: { id },
+      data: { password: dto.newPassword },
     });
-    const fresh = this.store.findUserById(id);
-    if (!fresh) {
-      throw new NotFoundException('User not found');
-    }
     return this.toPublic(fresh);
   }
 
-  remove(id: string): void {
-    const deleted = this.store.deleteUser(id);
-    if (!deleted) {
+  async remove(id: string): Promise<void> {
+    const existing = await this.prisma.user.findUnique({ where: { id } });
+    if (!existing) {
       throw new NotFoundException('User not found');
     }
+    await this.prisma.$transaction([
+      this.prisma.article.updateMany({
+        where: { authorId: id },
+        data: { authorId: null },
+      }),
+      this.prisma.user.delete({ where: { id } }),
+    ]);
   }
 
-  private toPublic(user: User): UserResponseDto {
+  private toPublic(user: PrismaUser): UserResponseDto {
     return {
       id: user.id,
       login: user.login,
-      role: user.role,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
+      role: this.fromPrismaRole(user.role),
+      createdAt: user.createdAt.getTime(),
+      updatedAt: user.updatedAt.getTime(),
     };
+  }
+
+  private toPrismaRole(role: UserRole): PrismaUserRole {
+    switch (role) {
+      case UserRole.ADMIN:
+        return PrismaUserRole.ADMIN;
+      case UserRole.EDITOR:
+        return PrismaUserRole.EDITOR;
+      case UserRole.VIEWER:
+      default:
+        return PrismaUserRole.VIEWER;
+    }
+  }
+
+  private fromPrismaRole(role: PrismaUserRole): UserRole {
+    switch (role) {
+      case PrismaUserRole.ADMIN:
+        return UserRole.ADMIN;
+      case PrismaUserRole.EDITOR:
+        return UserRole.EDITOR;
+      case PrismaUserRole.VIEWER:
+      default:
+        return UserRole.VIEWER;
+    }
   }
 }

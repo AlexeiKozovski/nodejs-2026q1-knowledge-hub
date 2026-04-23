@@ -172,9 +172,15 @@ describe('Comments (e2e)', () => {
       expect(hasComment2).toBe(false);
 
       // Cleanup
-      await unauthorizedRequest.delete(commentsRoutes.delete(comment1Id)).set(commonHeaders);
-      await unauthorizedRequest.delete(commentsRoutes.delete(comment2Id)).set(commonHeaders);
-      await unauthorizedRequest.delete(articlesRoutes.delete(anotherArticleId)).set(commonHeaders);
+      await unauthorizedRequest
+        .delete(commentsRoutes.delete(comment1Id))
+        .set(commonHeaders);
+      await unauthorizedRequest
+        .delete(commentsRoutes.delete(comment2Id))
+        .set(commonHeaders);
+      await unauthorizedRequest
+        .delete(articlesRoutes.delete(anotherArticleId))
+        .set(commonHeaders);
     });
   });
 
