@@ -1,7 +1,16 @@
+import 'dotenv/config';
 import { PrismaClient, ArticleStatus, UserRole } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import * as bcrypt from 'bcryptjs';
 
-const prisma = new PrismaClient();
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  throw new Error('DATABASE_URL is required to run seed');
+}
+
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString }),
+});
 
 async function main(): Promise<void> {
   await prisma.comment.deleteMany();
@@ -63,7 +72,7 @@ async function main(): Promise<void> {
     ),
   );
 
-  const byName = new Map(tags.map((tag) => [tag.name, tag.id]));
+  const byName = new Map<string, string>(tags.map((tag) => [tag.name, tag.id]));
 
   const articles = await Promise.all([
     prisma.article.create({
