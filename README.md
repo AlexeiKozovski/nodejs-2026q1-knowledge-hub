@@ -188,10 +188,12 @@ If `API_KEY` is set in `.env`, add the header to API calls (not required for `/d
 
 ## Testing
 
-| Command        | Description |
-| -------------- | ----------- |
-| `npm test`     | Builds the project, starts the server on the configured port, runs Jest e2e tests against it, then stops the server. |
-| `npm run test:jest` | Runs Jest only. Use when the app is **already running** separately on the same `PORT` (e.g. second terminal: `npm start`). |
+| Command | Description |
+| ------- | ----------- |
+| `npm run test:unit` | Runs unit tests with Vitest (`src/**/*.unit.spec.ts`). |
+| `npm run test:coverage` | Runs unit tests with coverage report and fails if thresholds are not met (Lines >= 90%, Branches >= 85%). |
+| `npm run test:jest` | Runs Jest integration/e2e tests only. Use when the app is already running on the same `PORT` (e.g. in another terminal: `npm start`). |
+| `npm test` | Runs the full pipeline: unit tests, build, start app, run integration/e2e tests, then stop app. |
 
 ## Code quality
 
