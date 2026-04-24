@@ -82,6 +82,31 @@ describe('JwtAuthGuard', () => {
     );
   });
 
+  test('throws UnauthorizedException when bearer scheme is malformed', () => {
+    const { context } = createExecutionContext('Token abc');
+    expect(() => guard.canActivate(context as never)).toThrowError(
+      UnauthorizedException,
+    );
+  });
+
+  test('throws UnauthorizedException when bearer token is empty', () => {
+    const { context } = createExecutionContext('Bearer   ');
+    expect(() => guard.canActivate(context as never)).toThrowError(
+      UnauthorizedException,
+    );
+  });
+
+  test('throws UnauthorizedException when token payload is invalid', () => {
+    const token = jwt.sign(
+      { userId: 'u1', login: 'user1', role: 'UNKNOWN' },
+      'access-secret-test',
+    );
+    const { context } = createExecutionContext(`Bearer ${token}`);
+    expect(() => guard.canActivate(context as never)).toThrowError(
+      UnauthorizedException,
+    );
+  });
+
   test('throws UnauthorizedException for expired token', () => {
     const token = jwt.sign(
       { userId: 'u1', login: 'user1', role: UserRole.VIEWER },

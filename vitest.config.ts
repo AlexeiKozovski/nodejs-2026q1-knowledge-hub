@@ -12,6 +12,19 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html'],
+      include: [
+        'src/common/guards/jwt-auth.guard.ts',
+        'src/common/guards/roles.guard.ts',
+        'src/common/interceptors/**/*.ts',
+        'src/article/dto/create-article.dto.ts',
+        'src/auth/dto/login.dto.ts',
+        'src/auth/dto/signup.dto.ts',
+        'src/user/dto/create-user.dto.ts',
+      ],
+      thresholds: {
+        lines: 90,
+        branches: 85,
+      },
     },
   },
   resolve: {

@@ -66,6 +66,15 @@ describe('RolesGuard', () => {
     );
   });
 
+  test('throws ForbiddenException when required role exists but request has no user', () => {
+    reflector.getAllAndOverride.mockReturnValue([UserRole.ADMIN]);
+    const { context } = createExecutionContext();
+
+    expect(() => guard.canActivate(context as never)).toThrowError(
+      ForbiddenException,
+    );
+  });
+
   test('allows access when @Roles metadata is missing', () => {
     reflector.getAllAndOverride.mockReturnValue(undefined);
     const { context } = createExecutionContext();

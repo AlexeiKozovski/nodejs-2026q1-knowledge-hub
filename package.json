@@ -20,7 +20,7 @@
     "test:jest": "jest --testMatch \"<rootDir>/*.spec.ts\" --noStackTrace --runInBand",
     "test:unit": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test": "npm run build && start-server-and-test \"node dist/src/main\" tcp:4000 \"npm run test:jest\"",
+    "test": "npm run test:unit && npm run build && start-server-and-test \"node dist/src/main\" tcp:4000 \"npm run test:jest\"",
     "test:auth": "cross-env TEST_MODE=auth jest --testPathIgnorePatterns refresh.e2e.spec.ts --noStackTrace --runInBand",
     "test:refresh": "cross-env TEST_MODE=auth jest --testPathPattern refresh.e2e.spec.ts --noStackTrace --runInBand",
     "test:watch": "jest --watch",
