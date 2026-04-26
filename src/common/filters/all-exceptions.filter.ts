@@ -9,6 +9,7 @@ import {
 import { Request, Response } from 'express';
 import { getReasonPhrase } from 'http-status-codes';
 import { DomainError } from '../errors/domain-errors';
+import { appendRotatingFileLine } from '../logging/log-file.writer';
 
 function reasonPhraseOrFallback(status: number): string {
   try {
@@ -21,6 +22,24 @@ function reasonPhraseOrFallback(status: number): string {
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
   private readonly logger = new Logger(AllExceptionsFilter.name);
+  private readonly fileContext = AllExceptionsFilter.name;
+
+  private writeFile(
+    level: 'warn' | 'error' | 'log',
+    message: string,
+    trace?: string,
+  ): void {
+    const payload: Record<string, unknown> = {
+      timestamp: new Date().toISOString(),
+      level,
+      context: this.fileContext,
+      message,
+    };
+    if (trace) {
+      payload.trace = trace;
+    }
+    appendRotatingFileLine(JSON.stringify(payload));
+  }
 
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
@@ -37,9 +56,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
     }
 
     if (exception instanceof DomainError) {
-      this.logger.warn(
-        `${exception.name} on ${request.method} ${request.url}: ${exception.message}`,
-      );
+      const warn = `${exception.name} on ${request.method} ${request.url}: ${exception.message}`;
+      this.logger.warn(warn);
+      this.writeFile('warn', warn);
       response.status(exception.statusCode).json({
         statusCode: exception.statusCode,
         error: reasonPhraseOrFallback(exception.statusCode),
@@ -50,10 +69,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
 
     const err =
       exception instanceof Error ? exception : new Error(String(exception));
-    this.logger.error(
-      `${err.name} on ${request.method} ${request.url}: ${err.message}`,
-      err.stack,
-    );
+    const error = `${err.name} on ${request.method} ${request.url}: ${err.message}`;
+    this.logger.error(error, err.stack);
+    this.writeFile('error', error, err.stack);
     response.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       statusCode: 500,
       error: 'Internal Server Error',
@@ -69,9 +87,13 @@ export class AllExceptionsFilter implements ExceptionFilter {
   ): void {
     const summary = `${request.method} ${request.url} ${typeof body === 'string' ? body : JSON.stringify(body)}`;
     if (status >= 500) {
-      this.logger.error(`HTTP ${status} ${summary}`, exception.stack);
+      const text = `HTTP ${status} ${summary}`;
+      this.logger.error(text, exception.stack);
+      this.writeFile('error', text, exception.stack);
     } else {
-      this.logger.warn(`HTTP ${status} ${summary}`);
+      const text = `HTTP ${status} ${summary}`;
+      this.logger.warn(text);
+      this.writeFile('warn', text);
     }
   }
 

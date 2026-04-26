@@ -4,6 +4,7 @@ import {
   LogLevel,
   LoggerService,
 } from '@nestjs/common';
+import { appendRotatingFileLine } from './log-file.writer';
 
 const LOG_LEVEL_PRIORITY: Record<LogLevel, number> = {
   error: 0,
@@ -85,17 +86,20 @@ export class AppLogger implements LoggerService {
     context?: string,
     trace?: string,
   ): void {
+    const payload: Record<string, unknown> = {
+      timestamp: new Date().toISOString(),
+      level,
+      context: context ?? 'Application',
+      message,
+    };
+    if (trace) {
+      payload.trace = trace;
+    }
+    const line = `${JSON.stringify(payload)}\n`;
+    appendRotatingFileLine(line);
+
     if (this.isProduction) {
-      const payload: Record<string, unknown> = {
-        timestamp: new Date().toISOString(),
-        level,
-        context: context ?? 'Application',
-        message,
-      };
-      if (trace) {
-        payload.trace = trace;
-      }
-      process.stdout.write(`${JSON.stringify(payload)}\n`);
+      process.stdout.write(line);
       return;
     }
 

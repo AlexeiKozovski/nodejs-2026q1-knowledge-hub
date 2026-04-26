@@ -1,5 +1,6 @@
 import { Injectable, Logger, NestMiddleware } from '@nestjs/common';
 import { NextFunction, Request, Response } from 'express';
+import { appendRotatingFileLine } from '../logging/log-file.writer';
 
 const REDACTED_VALUE = '[REDACTED]';
 
@@ -38,15 +39,29 @@ export class RequestLoggerMiddleware implements NestMiddleware {
       query: query ?? {},
       body: body ?? {},
     });
-    this.logger.log(
-      `Incoming request ${method} ${originalUrl} ${JSON.stringify(payload)}`,
+    const incomingText = `Incoming request ${method} ${originalUrl} ${JSON.stringify(payload)}`;
+    this.logger.log(incomingText);
+    appendRotatingFileLine(
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: 'log',
+        context: 'HTTP',
+        message: incomingText,
+      }),
     );
 
     res.on('finish', () => {
       const durationMs =
         Number(process.hrtime.bigint() - startedAt) / 1_000_000;
-      this.logger.log(
-        `Outgoing response ${method} ${originalUrl} ${res.statusCode} ${durationMs.toFixed(2)}ms`,
+      const outgoingText = `Outgoing response ${method} ${originalUrl} ${res.statusCode} ${durationMs.toFixed(2)}ms`;
+      this.logger.log(outgoingText);
+      appendRotatingFileLine(
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: 'log',
+          context: 'HTTP',
+          message: outgoingText,
+        }),
       );
     });
 
