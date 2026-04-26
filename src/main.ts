@@ -1,4 +1,4 @@
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -36,7 +36,7 @@ async function bootstrap() {
 
   await app.listen(port);
 
-  const processLogger = new Logger('Process');
+  const processLogger = new AppLogger();
   let isShuttingDown = false;
   const gracefulExit = async (
     source: 'uncaughtException' | 'unhandledRejection',
@@ -47,13 +47,19 @@ async function bootstrap() {
     }
     isShuttingDown = true;
     const err = reason instanceof Error ? reason : new Error(String(reason));
-    processLogger.error(`${source}: ${err.message}`, err.stack);
+    const line = `${source}: ${err.message}`;
+    if (source === 'uncaughtException') {
+      processLogger.fatal(line, err.stack, 'Process');
+    } else {
+      processLogger.error(line, err.stack, 'Process');
+    }
     try {
       await app.close();
     } catch (closeErr) {
       processLogger.error(
         'Error while closing the application',
         closeErr instanceof Error ? closeErr.stack : String(closeErr),
+        'Process',
       );
     }
     process.exit(1);

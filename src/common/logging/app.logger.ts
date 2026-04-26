@@ -59,6 +59,11 @@ export class AppLogger implements LoggerService {
     this.write('error', message, context, trace);
   }
 
+  fatal(message: unknown, trace?: string, context?: string): void {
+    if (!this.enabledLevels.has('error')) return;
+    this.write('fatal', message, context, trace);
+  }
+
   warn(message: unknown, context?: string): void {
     if (!this.enabledLevels.has('warn')) return;
     this.write('warn', message, context);
@@ -75,7 +80,7 @@ export class AppLogger implements LoggerService {
   }
 
   private write(
-    level: Exclude<LogLevel, 'fatal'>,
+    level: LogLevel,
     message: unknown,
     context?: string,
     trace?: string,
@@ -94,8 +99,14 @@ export class AppLogger implements LoggerService {
       return;
     }
 
-    if (level === 'error') {
-      this.devLogger.error(message, trace, context);
+    if (level === 'error' || level === 'fatal') {
+      const out =
+        level === 'fatal'
+          ? `[FATAL] ${
+              typeof message === 'string' ? message : JSON.stringify(message)
+            }`
+          : message;
+      this.devLogger.error(out, trace, context);
       return;
     }
     this.devLogger[level](message as never, context);
