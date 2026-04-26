@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenError } from '../../common/errors/domain-errors';
 import { Reflector } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
@@ -57,21 +57,21 @@ describe('RolesGuard', () => {
     expect(guard.canActivate(context as never)).toBe(true);
   });
 
-  test('throws ForbiddenException when user role is insufficient', () => {
+  test('throws ForbiddenError when user role is insufficient', () => {
     reflector.getAllAndOverride.mockReturnValue([UserRole.ADMIN]);
     const { context } = createExecutionContext(UserRole.VIEWER);
 
     expect(() => guard.canActivate(context as never)).toThrowError(
-      ForbiddenException,
+      ForbiddenError,
     );
   });
 
-  test('throws ForbiddenException when required role exists but request has no user', () => {
+  test('throws ForbiddenError when required role exists but request has no user', () => {
     reflector.getAllAndOverride.mockReturnValue([UserRole.ADMIN]);
     const { context } = createExecutionContext();
 
     expect(() => guard.canActivate(context as never)).toThrowError(
-      ForbiddenException,
+      ForbiddenError,
     );
   });
 

@@ -1,4 +1,7 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import {
+  NotFoundError,
+  ValidationError,
+} from '../../common/errors/domain-errors';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { Prisma, UserRole as PrismaUserRole } from '@prisma/client';
@@ -87,7 +90,7 @@ describe('UserService', () => {
   });
 
   describe('signup data validation', () => {
-    test('throws BadRequestException when update has no fields to change', async () => {
+    test('throws ValidationError when update has no fields to change', async () => {
       const actor: AuthenticatedUser = {
         userId,
         login: 'a',
@@ -96,10 +99,10 @@ describe('UserService', () => {
       const dto: UpdateUserDto = {};
       await expect(
         service.updateUser(userId, dto, actor),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).rejects.toBeInstanceOf(ValidationError);
     });
 
-    test('throws BadRequestException when password change is incomplete', async () => {
+    test('throws ValidationError when password change is incomplete', async () => {
       prisma.user.findUnique.mockResolvedValue(prismaUser());
       const actor: AuthenticatedUser = {
         userId,
@@ -112,7 +115,7 @@ describe('UserService', () => {
           { oldPassword: 'x' } as UpdateUserDto,
           actor,
         ),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).rejects.toBeInstanceOf(ValidationError);
     });
   });
 
@@ -169,7 +172,7 @@ describe('UserService', () => {
   });
 
   describe('user not found', () => {
-    test('throws NotFoundException on findOne when user is missing', async () => {
+    test('throws NotFoundError on findOne when user is missing', async () => {
       prisma.user.findUnique.mockResolvedValue(null);
       const actor: AuthenticatedUser = {
         userId,
@@ -177,7 +180,7 @@ describe('UserService', () => {
         role: UserRole.ADMIN,
       };
       await expect(service.findOne(userId, actor)).rejects.toBeInstanceOf(
-        NotFoundException,
+        NotFoundError,
       );
     });
   });

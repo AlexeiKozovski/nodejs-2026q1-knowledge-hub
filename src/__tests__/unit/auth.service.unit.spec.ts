@@ -1,8 +1,8 @@
 import {
-  BadRequestException,
-  ForbiddenException,
-  UnauthorizedException,
-} from '@nestjs/common';
+  ForbiddenError,
+  UnauthorizedError,
+  ValidationError,
+} from '../../common/errors/domain-errors';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { UserRole as PrismaUserRole } from '@prisma/client';
@@ -142,18 +142,18 @@ describe('AuthService', () => {
       await service.refresh({ refreshToken: first });
       await expect(
         service.refresh({ refreshToken: first }),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      ).rejects.toBeInstanceOf(ForbiddenError);
     });
   });
 
   describe('expired or invalid token handling', () => {
-    test('throws ForbiddenException when refresh JWT is invalid', async () => {
+    test('throws ForbiddenError when refresh JWT is invalid', async () => {
       await expect(
         service.refresh({ refreshToken: 'not-a-jwt' }),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      ).rejects.toBeInstanceOf(ForbiddenError);
     });
 
-    test('throws ForbiddenException when refresh payload does not match stored user', async () => {
+    test('throws ForbiddenError when refresh payload does not match stored user', async () => {
       prisma.user.findUnique.mockResolvedValue(dbUser({ login: 'other' }));
       const token = jwt.sign(
         { userId, login: 'user1', role: UserRole.VIEWER },
@@ -162,12 +162,12 @@ describe('AuthService', () => {
       );
       await expect(
         service.refresh({ refreshToken: token }),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      ).rejects.toBeInstanceOf(ForbiddenError);
     });
 
-    test('throws UnauthorizedException when refresh body is malformed', async () => {
+    test('throws UnauthorizedError when refresh body is malformed', async () => {
       await expect(service.refresh({})).rejects.toBeInstanceOf(
-        UnauthorizedException,
+        UnauthorizedError,
       );
     });
   });
@@ -198,11 +198,11 @@ describe('AuthService', () => {
       );
     });
 
-    test('throws BadRequestException when signup login is already taken', async () => {
+    test('throws ValidationError when signup login is already taken', async () => {
       prisma.user.findUnique.mockResolvedValue(dbUser());
       await expect(
         service.signup({ login: 'user1', password: 'p' }),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).rejects.toBeInstanceOf(ValidationError);
     });
   });
 });

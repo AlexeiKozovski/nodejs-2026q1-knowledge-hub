@@ -1,11 +1,7 @@
-import {
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-  UnprocessableEntityException,
-} from '@nestjs/common';
+import { Injectable, UnprocessableEntityException } from '@nestjs/common';
 import { Comment as PrismaComment } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/authenticated-user';
+import { ForbiddenError, NotFoundError } from '../common/errors/domain-errors';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserRole } from '../types';
 import { CommentResponseDto } from './dto/comment-response.dto';
@@ -28,7 +24,7 @@ export class CommentService {
   async findOne(id: string): Promise<CommentResponseDto> {
     const comment = await this.prisma.comment.findUnique({ where: { id } });
     if (!comment) {
-      throw new NotFoundException('Comment not found');
+      throw new NotFoundError('Comment not found');
     }
     return this.toPublic(comment);
   }
@@ -41,7 +37,7 @@ export class CommentService {
       actor.role === UserRole.EDITOR ? actor.userId : (dto.authorId ?? null);
     if (actor.role === UserRole.EDITOR) {
       if (dto.authorId !== undefined && dto.authorId !== actor.userId) {
-        throw new ForbiddenException();
+        throw new ForbiddenError('Forbidden');
       }
     }
     const article = await this.prisma.article.findUnique({
@@ -65,7 +61,7 @@ export class CommentService {
   async remove(id: string, actor: AuthenticatedUser): Promise<void> {
     const existing = await this.prisma.comment.findUnique({ where: { id } });
     if (!existing) {
-      throw new NotFoundException('Comment not found');
+      throw new NotFoundError('Comment not found');
     }
     if (actor.role === UserRole.ADMIN) {
       await this.prisma.comment.delete({ where: { id } });
@@ -73,12 +69,12 @@ export class CommentService {
     }
     if (actor.role === UserRole.EDITOR) {
       if (existing.authorId !== actor.userId) {
-        throw new ForbiddenException();
+        throw new ForbiddenError('Forbidden');
       }
       await this.prisma.comment.delete({ where: { id } });
       return;
     }
-    throw new ForbiddenException();
+    throw new ForbiddenError('Forbidden');
   }
 
   private toPublic(comment: PrismaComment): CommentResponseDto {
