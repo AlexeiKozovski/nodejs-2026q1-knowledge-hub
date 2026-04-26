@@ -1,10 +1,9 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
 import { OptionalApiKeyGuard } from './common/guards/optional-api-key.guard';
-import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
 import { PrismaModule } from './prisma/prisma.module';
 import { UserModule } from './user/user.module';
@@ -33,10 +32,7 @@ import { AuthModule } from './auth/auth.module';
     CategoryModule,
     CommentModule,
   ],
-  providers: [
-    { provide: APP_INTERCEPTOR, useClass: LoggingInterceptor },
-    { provide: APP_GUARD, useClass: OptionalApiKeyGuard },
-  ],
+  providers: [{ provide: APP_GUARD, useClass: OptionalApiKeyGuard }],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

@@ -35,11 +35,19 @@ describe('RBAC - Categories (e2e)', () => {
     adminUserId = adminResult.mockUserId;
 
     // Create editor and viewer users
-    const editorResult = await getUserTokenByRole(request, 'editor', adminHeaders);
+    const editorResult = await getUserTokenByRole(
+      request,
+      'editor',
+      adminHeaders,
+    );
     editorHeaders = { ...headers, Authorization: editorResult.token };
     editorUserId = editorResult.userId;
 
-    const viewerResult = await getUserTokenByRole(request, 'viewer', adminHeaders);
+    const viewerResult = await getUserTokenByRole(
+      request,
+      'viewer',
+      adminHeaders,
+    );
     viewerHeaders = { ...headers, Authorization: viewerResult.token };
     viewerUserId = viewerResult.userId;
   });

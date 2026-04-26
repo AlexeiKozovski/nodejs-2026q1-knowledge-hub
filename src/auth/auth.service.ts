@@ -1,15 +1,15 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { UserRole as PrismaUserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { createHash } from 'crypto';
 import * as jwt from 'jsonwebtoken';
 import type { SignOptions } from 'jsonwebtoken';
+import {
+  ForbiddenError,
+  UnauthorizedError,
+  ValidationError,
+} from '../common/errors/domain-errors';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserRole } from '../types';
 import { UserResponseDto } from '../user/dto/user-response.dto';
@@ -32,7 +32,7 @@ export class AuthService {
       where: { login: dto.login },
     });
     if (existing) {
-      throw new BadRequestException('Login is already taken');
+      throw new ValidationError('Login is already taken');
     }
     const count = await this.prisma.user.count();
     const prismaRole =
@@ -54,11 +54,11 @@ export class AuthService {
       where: { login: dto.login },
     });
     if (!user) {
-      throw new ForbiddenException('Invalid login or password');
+      throw new ForbiddenError('Invalid login or password');
     }
     const match = await bcrypt.compare(dto.password, user.password);
     if (!match) {
-      throw new ForbiddenException('Invalid login or password');
+      throw new ForbiddenError('Invalid login or password');
     }
     return this.issueTokens(user);
   }
@@ -67,20 +67,20 @@ export class AuthService {
     const refreshToken = this.extractRefreshToken(body);
     this.cleanupRevokedTokens();
     if (this.isRefreshTokenRevoked(refreshToken)) {
-      throw new ForbiddenException('Invalid or expired refresh token');
+      throw new ForbiddenError('Invalid or expired refresh token');
     }
     const refreshSecret = this.getRefreshSecret();
     let payload: jwt.JwtPayload;
     try {
       payload = jwt.verify(refreshToken, refreshSecret) as jwt.JwtPayload;
     } catch {
-      throw new ForbiddenException('Invalid or expired refresh token');
+      throw new ForbiddenError('Invalid or expired refresh token');
     }
     const userId = payload.userId as string | undefined;
     const login = payload.login as string | undefined;
     const role = payload.role as UserRole | undefined;
     if (!userId || !login || !this.isUserRole(role)) {
-      throw new ForbiddenException('Invalid or expired refresh token');
+      throw new ForbiddenError('Invalid or expired refresh token');
     }
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (
@@ -88,7 +88,7 @@ export class AuthService {
       user.login !== login ||
       this.fromPrismaRole(user.role) !== role
     ) {
-      throw new ForbiddenException('Invalid or expired refresh token');
+      throw new ForbiddenError('Invalid or expired refresh token');
     }
     this.revokeRefreshToken(refreshToken, payload.exp);
     return this.issueTokens(user);
@@ -101,7 +101,7 @@ export class AuthService {
     try {
       payload = jwt.verify(refreshToken, refreshSecret) as jwt.JwtPayload;
     } catch {
-      throw new ForbiddenException('Invalid or expired refresh token');
+      throw new ForbiddenError('Invalid or expired refresh token');
     }
     this.revokeRefreshToken(refreshToken, payload.exp);
   }
@@ -113,7 +113,7 @@ export class AuthService {
       !('refreshToken' in body) ||
       typeof (body as { refreshToken: unknown }).refreshToken !== 'string'
     ) {
-      throw new UnauthorizedException('Refresh token is required');
+      throw new UnauthorizedError('Refresh token is required');
     }
     return (body as { refreshToken: string }).refreshToken;
   }

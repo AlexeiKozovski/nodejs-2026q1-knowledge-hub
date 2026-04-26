@@ -1,14 +1,14 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import {
   Article as PrismaArticle,
   ArticleStatus as PrismaArticleStatus,
 } from '@prisma/client';
 import { AuthenticatedUser } from '../auth/authenticated-user';
+import {
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from '../common/errors/domain-errors';
 import { PrismaService } from '../prisma/prisma.service';
 import { ArticleStatus, UserRole } from '../types';
 import { ArticleResponseDto } from './dto/article-response.dto';
@@ -42,7 +42,7 @@ export class ArticleService {
       include: { tags: true },
     });
     if (!article) {
-      throw new NotFoundException('Article not found');
+      throw new NotFoundError('Article not found');
     }
     return this.toPublic(article, article.tags);
   }
@@ -55,7 +55,7 @@ export class ArticleService {
       actor.role === UserRole.EDITOR ? actor.userId : (dto.authorId ?? null);
     if (actor.role === UserRole.EDITOR) {
       if (dto.authorId !== undefined && dto.authorId !== actor.userId) {
-        throw new ForbiddenException();
+        throw new ForbiddenError('Forbidden');
       }
     }
     const record = await this.prisma.article.create({
@@ -90,20 +90,20 @@ export class ArticleService {
       dto.categoryId !== undefined ||
       dto.tags !== undefined;
     if (!hasAnyField) {
-      throw new BadRequestException('No fields to update');
+      throw new ValidationError('No fields to update');
     }
 
     const existing = await this.prisma.article.findUnique({ where: { id } });
     if (!existing) {
-      throw new NotFoundException('Article not found');
+      throw new NotFoundError('Article not found');
     }
 
     if (actor.role === UserRole.EDITOR) {
       if (existing.authorId !== actor.userId) {
-        throw new ForbiddenException();
+        throw new ForbiddenError('Forbidden');
       }
       if (dto.authorId !== undefined && dto.authorId !== actor.userId) {
-        throw new ForbiddenException();
+        throw new ForbiddenError('Forbidden');
       }
     }
 
@@ -142,7 +142,7 @@ export class ArticleService {
   async remove(id: string): Promise<void> {
     const existing = await this.prisma.article.findUnique({ where: { id } });
     if (!existing) {
-      throw new NotFoundException('Article not found');
+      throw new NotFoundError('Article not found');
     }
     await this.prisma.article.delete({ where: { id } });
   }

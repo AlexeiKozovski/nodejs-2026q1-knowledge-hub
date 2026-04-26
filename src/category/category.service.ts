@@ -1,9 +1,6 @@
-import {
-  BadRequestException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Category as PrismaCategory } from '@prisma/client';
+import { NotFoundError, ValidationError } from '../common/errors/domain-errors';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { CategoryResponseDto } from './dto/category-response.dto';
@@ -21,7 +18,7 @@ export class CategoryService {
   async findOne(id: string): Promise<CategoryResponseDto> {
     const category = await this.prisma.category.findUnique({ where: { id } });
     if (!category) {
-      throw new NotFoundException('Category not found');
+      throw new NotFoundError('Category not found');
     }
     return this.toPublic(category);
   }
@@ -38,12 +35,12 @@ export class CategoryService {
     dto: UpdateCategoryDto,
   ): Promise<CategoryResponseDto> {
     if (dto.name === undefined && dto.description === undefined) {
-      throw new BadRequestException('No fields to update');
+      throw new ValidationError('No fields to update');
     }
 
     const existing = await this.prisma.category.findUnique({ where: { id } });
     if (!existing) {
-      throw new NotFoundException('Category not found');
+      throw new NotFoundError('Category not found');
     }
 
     const updated = await this.prisma.category.update({
@@ -62,7 +59,7 @@ export class CategoryService {
   async remove(id: string): Promise<void> {
     const existing = await this.prisma.category.findUnique({ where: { id } });
     if (!existing) {
-      throw new NotFoundException('Category not found');
+      throw new NotFoundError('Category not found');
     }
     await this.prisma.category.delete({ where: { id } });
   }

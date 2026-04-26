@@ -1,13 +1,13 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { User as PrismaUser, UserRole as PrismaUserRole } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { AuthenticatedUser } from '../auth/authenticated-user';
+import {
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from '../common/errors/domain-errors';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserRole } from '../types';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -31,11 +31,11 @@ export class UserService {
     actor: AuthenticatedUser,
   ): Promise<UserResponseDto> {
     if (actor.role === UserRole.VIEWER && actor.userId !== id) {
-      throw new ForbiddenException();
+      throw new ForbiddenError('Forbidden');
     }
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundError('User not found');
     }
     return this.toPublic(user);
   }
@@ -63,27 +63,27 @@ export class UserService {
       dto.oldPassword !== undefined || dto.newPassword !== undefined;
 
     if (!hasRole && !hasPassword) {
-      throw new BadRequestException('No fields to update');
+      throw new ValidationError('No fields to update');
     }
     if (hasPassword && (!dto.oldPassword || !dto.newPassword)) {
-      throw new BadRequestException('oldPassword and newPassword are required');
+      throw new ValidationError('oldPassword and newPassword are required');
     }
 
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundError('User not found');
     }
 
     const isAdmin = actor.role === UserRole.ADMIN;
     const isSelf = actor.userId === id;
 
     if (!isAdmin && !isSelf) {
-      throw new ForbiddenException();
+      throw new ForbiddenError('Forbidden');
     }
 
     if (hasRole) {
       if (!isAdmin) {
-        throw new ForbiddenException();
+        throw new ForbiddenError('Forbidden');
       }
       const updated = await this.prisma.user.update({
         where: { id },
@@ -94,7 +94,7 @@ export class UserService {
 
     const match = await bcrypt.compare(dto.oldPassword!, user.password);
     if (!match) {
-      throw new ForbiddenException('Old password is incorrect');
+      throw new ForbiddenError('Old password is incorrect');
     }
     const passwordHash = await bcrypt.hash(
       dto.newPassword!,
@@ -109,11 +109,11 @@ export class UserService {
 
   async remove(id: string, actor: AuthenticatedUser): Promise<void> {
     if (actor.role !== UserRole.ADMIN) {
-      throw new ForbiddenException();
+      throw new ForbiddenError('Forbidden');
     }
     const existing = await this.prisma.user.findUnique({ where: { id } });
     if (!existing) {
-      throw new NotFoundException('User not found');
+      throw new NotFoundError('User not found');
     }
     await this.prisma.$transaction([
       this.prisma.article.updateMany({

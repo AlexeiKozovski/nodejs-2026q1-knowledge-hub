@@ -1,4 +1,7 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  ForbiddenError,
+  ValidationError,
+} from '../../common/errors/domain-errors';
 import { Test } from '@nestjs/testing';
 import { ArticleStatus as PrismaArticleStatus } from '@prisma/client';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -77,7 +80,7 @@ describe('ArticleService', () => {
         authorId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
       };
       await expect(service.create(dto, actor)).rejects.toBeInstanceOf(
-        ForbiddenException,
+        ForbiddenError,
       );
       expect(prisma.article.create).not.toHaveBeenCalled();
     });
@@ -126,7 +129,7 @@ describe('ArticleService', () => {
   });
 
   describe('invalid transitions', () => {
-    test('throws BadRequestException when update payload is empty', async () => {
+    test('throws ValidationError when update payload is empty', async () => {
       prisma.article.findUnique.mockResolvedValue(articleRow());
       const actor: AuthenticatedUser = {
         userId: editorId,
@@ -135,10 +138,10 @@ describe('ArticleService', () => {
       };
       await expect(
         service.update(articleId, {} as UpdateArticleDto, actor),
-      ).rejects.toBeInstanceOf(BadRequestException);
+      ).rejects.toBeInstanceOf(ValidationError);
     });
 
-    test('throws ForbiddenException when editor updates another authors article', async () => {
+    test('throws ForbiddenError when editor updates another authors article', async () => {
       prisma.article.findUnique.mockResolvedValue(
         articleRow({ authorId: 'ffffffff-ffff-4fff-8fff-ffffffffffff' }),
       );
@@ -149,7 +152,7 @@ describe('ArticleService', () => {
       };
       await expect(
         service.update(articleId, { title: 'nope' }, actor),
-      ).rejects.toBeInstanceOf(ForbiddenException);
+      ).rejects.toBeInstanceOf(ForbiddenError);
     });
   });
 

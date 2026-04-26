@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common';
+import { UnauthorizedError } from '../../common/errors/domain-errors';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import * as jwt from 'jsonwebtoken';
@@ -68,46 +68,46 @@ describe('JwtAuthGuard', () => {
     });
   });
 
-  test('throws UnauthorizedException when authorization header is missing', () => {
+  test('throws UnauthorizedError when authorization header is missing', () => {
     const { context } = createExecutionContext();
     expect(() => guard.canActivate(context as never)).toThrowError(
-      UnauthorizedException,
+      UnauthorizedError,
     );
   });
 
-  test('throws UnauthorizedException for malformed bearer token', () => {
+  test('throws UnauthorizedError for malformed bearer token', () => {
     const { context } = createExecutionContext('Bearer not-a-jwt');
     expect(() => guard.canActivate(context as never)).toThrowError(
-      UnauthorizedException,
+      UnauthorizedError,
     );
   });
 
-  test('throws UnauthorizedException when bearer scheme is malformed', () => {
+  test('throws UnauthorizedError when bearer scheme is malformed', () => {
     const { context } = createExecutionContext('Token abc');
     expect(() => guard.canActivate(context as never)).toThrowError(
-      UnauthorizedException,
+      UnauthorizedError,
     );
   });
 
-  test('throws UnauthorizedException when bearer token is empty', () => {
+  test('throws UnauthorizedError when bearer token is empty', () => {
     const { context } = createExecutionContext('Bearer   ');
     expect(() => guard.canActivate(context as never)).toThrowError(
-      UnauthorizedException,
+      UnauthorizedError,
     );
   });
 
-  test('throws UnauthorizedException when token payload is invalid', () => {
+  test('throws UnauthorizedError when token payload is invalid', () => {
     const token = jwt.sign(
       { userId: 'u1', login: 'user1', role: 'UNKNOWN' },
       'access-secret-test',
     );
     const { context } = createExecutionContext(`Bearer ${token}`);
     expect(() => guard.canActivate(context as never)).toThrowError(
-      UnauthorizedException,
+      UnauthorizedError,
     );
   });
 
-  test('throws UnauthorizedException for expired token', () => {
+  test('throws UnauthorizedError for expired token', () => {
     const token = jwt.sign(
       { userId: 'u1', login: 'user1', role: UserRole.VIEWER },
       'access-secret-test',
@@ -115,7 +115,7 @@ describe('JwtAuthGuard', () => {
     );
     const { context } = createExecutionContext(`Bearer ${token}`);
     expect(() => guard.canActivate(context as never)).toThrowError(
-      UnauthorizedException,
+      UnauthorizedError,
     );
   });
 });
