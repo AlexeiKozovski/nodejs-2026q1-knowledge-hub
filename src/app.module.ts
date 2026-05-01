@@ -11,6 +11,7 @@ import { ArticleModule } from './article/article.module';
 import { CategoryModule } from './category/category.module';
 import { CommentModule } from './comment/comment.module';
 import { AuthModule } from './auth/auth.module';
+import { AiModule } from './ai/ai.module';
 
 @Module({
   controllers: [AppController],
@@ -31,6 +32,7 @@ import { AuthModule } from './auth/auth.module';
     ArticleModule,
     CategoryModule,
     CommentModule,
+    AiModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: OptionalApiKeyGuard }],
 })
