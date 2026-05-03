@@ -12,15 +12,14 @@ export class AiUsageService {
 
   readonly requestsByEndpoint: Record<string, number> = {};
 
-  /** Best-effort total from Gemini usageMetadata.totalTokenCount when present */
   approximateTotalTokens = 0;
 
-  record(endpoint: string, tokens?: number): void {
+  record(endpoint: string, geminiTotalTokens?: number): void {
     this.totalRequests += 1;
     this.requestsByEndpoint[endpoint] =
       (this.requestsByEndpoint[endpoint] ?? 0) + 1;
-    if (tokens !== undefined && Number.isFinite(tokens)) {
-      this.approximateTotalTokens += tokens;
+    if (geminiTotalTokens !== undefined && Number.isFinite(geminiTotalTokens)) {
+      this.approximateTotalTokens += geminiTotalTokens;
     }
   }
 

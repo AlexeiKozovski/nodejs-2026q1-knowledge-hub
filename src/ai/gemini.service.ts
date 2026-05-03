@@ -1,10 +1,10 @@
 import {
   Injectable,
   InternalServerErrorException,
-  Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { AppLogger } from '../common/logging/app.logger';
 
 const MAX_ATTEMPTS = 3;
 
@@ -24,6 +24,14 @@ interface GeminiGenerateContentResponse {
   error?: { code?: number; message?: string; status?: string };
 }
 
+interface GeminiErrorBody {
+  error?: {
+    code?: number;
+    message?: string;
+    status?: string;
+  };
+}
+
 export interface GeminiTextResult {
   text: string;
   totalTokenCount?: number;
@@ -31,9 +39,12 @@ export interface GeminiTextResult {
 
 @Injectable()
 export class GeminiService {
-  private readonly logger = new Logger(GeminiService.name);
+  private readonly logContext = GeminiService.name;
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly appLogger: AppLogger,
+  ) {}
 
   async generateText(
     prompt: string,
@@ -48,7 +59,6 @@ export class GeminiService {
     );
   }
 
-  /** JSON object response; parsed and returned as object. */
   async generateJson(
     prompt: string,
   ): Promise<GeminiTextResult & { value: unknown }> {
@@ -57,7 +67,10 @@ export class GeminiService {
     try {
       value = JSON.parse(r.text) as unknown;
     } catch {
-      this.logger.warn('Gemini returned invalid JSON for structured prompt');
+      this.appLogger.warn(
+        'Gemini returned invalid JSON for structured prompt',
+        this.logContext,
+      );
       throw new ServiceUnavailableException(
         'AI provider returned malformed structured data',
       );
@@ -85,7 +98,16 @@ export class GeminiService {
 
     const endpoint = `${baseUrl}/v1beta/models/${model}:generateContent`;
 
-    const timeoutMs = 120_000;
+    const timeoutMs = Math.min(
+      Math.max(
+        5000,
+        Number.parseInt(
+          String(this.configService.get('GEMINI_HTTP_TIMEOUT_MS') ?? '120000'),
+          10,
+        ) || 120_000,
+      ),
+      600_000,
+    );
 
     const generationConfig: Record<string, unknown> = {
       temperature: 0.35,
@@ -116,7 +138,16 @@ export class GeminiService {
         });
       } catch (err) {
         const isAbort = err instanceof Error && err.name === 'AbortError';
-        const retriable = attempt < MAX_ATTEMPTS - 1 && !isAbort;
+        if (isAbort) {
+          this.appLogger.warn(
+            'Gemini request timed out or was aborted',
+            this.logContext,
+          );
+          throw new ServiceUnavailableException(
+            'AI provider request timed out',
+          );
+        }
+        const retriable = attempt < MAX_ATTEMPTS - 1;
         if (retriable) {
           await this.delay(Math.min(500 * 2 ** attempt, 4000));
           continue;
@@ -129,8 +160,22 @@ export class GeminiService {
       const rawText = await response.text().catch(() => '');
 
       if (response.status === 401 || response.status === 403) {
-        this.logger.error(
-          `Gemini auth rejected (HTTP ${response.status}) — check API key`,
+        this.appLogger.warn(
+          `Gemini auth rejected (HTTP ${response.status}); verify API key and permissions`,
+          this.logContext,
+        );
+        throw new InternalServerErrorException(
+          'AI service configuration is invalid',
+        );
+      }
+
+      if (
+        response.status === 400 &&
+        isLikelyGeminiAuthOrPermissionsError(parseGeminiRpcError(rawText))
+      ) {
+        this.appLogger.warn(
+          `Gemini rejected credentials or access (HTTP 400); details: ${redactForLog(rawText, 400)}`,
+          this.logContext,
         );
         throw new InternalServerErrorException(
           'AI service configuration is invalid',
@@ -142,15 +187,19 @@ export class GeminiService {
         try {
           payload = JSON.parse(rawText) as GeminiGenerateContentResponse;
         } catch {
-          this.logger.warn('Gemini success body was not valid JSON');
+          this.appLogger.warn(
+            'Gemini success body was not valid JSON',
+            this.logContext,
+          );
           throw new ServiceUnavailableException(
             'AI provider returned malformed data',
           );
         }
 
         if (payload?.error) {
-          this.logger.warn(
-            `Gemini payload error field: ${JSON.stringify(payload.error).slice(0, 400)}`,
+          this.appLogger.warn(
+            `Gemini payload error field: ${redactForLog(JSON.stringify(payload.error), 400)}`,
+            this.logContext,
           );
         }
 
@@ -173,8 +222,9 @@ export class GeminiService {
         attempt < MAX_ATTEMPTS - 1 &&
         (response.status === 429 || response.status >= 500);
 
-      this.logger.warn(
-        `Gemini generateContent HTTP ${response.status}: ${rawText.slice(0, 1500)}`,
+      this.appLogger.warn(
+        `Gemini generateContent HTTP ${response.status}: ${redactForLog(rawText, 1500)}`,
+        this.logContext,
       );
 
       if (retriable) {
@@ -197,6 +247,41 @@ export class GeminiService {
       setTimeout(resolve, ms);
     });
   }
+}
+
+function parseGeminiRpcError(raw: string): GeminiErrorBody['error'] | null {
+  try {
+    const j = JSON.parse(raw) as GeminiErrorBody;
+    return j?.error ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function isLikelyGeminiAuthOrPermissionsError(
+  err: GeminiErrorBody['error'] | null,
+): boolean {
+  if (!err) {
+    return false;
+  }
+  const status = (err.status ?? '').toUpperCase();
+  const msg = (err.message ?? '').toLowerCase();
+  if (status === 'PERMISSION_DENIED' || status === 'UNAUTHENTICATED') {
+    return true;
+  }
+  return (
+    msg.includes('api key not valid') ||
+    msg.includes('invalid api key') ||
+    msg.includes('api_key_invalid')
+  );
+}
+
+/** Never log values that look like Google API keys or bearer tokens. */
+function redactForLog(text: string, maxLen: number): string {
+  let s = text.slice(0, maxLen);
+  s = s.replace(/\bAIza[0-9A-Za-z\-_]{20,}\b/g, '[REDACTED]');
+  s = s.replace(/\bBearer\s+[A-Za-z0-9\-._~+/]+=*\b/gi, 'Bearer [REDACTED]');
+  return s;
 }
 
 function parseRetryAfterMs(response: Response): number | undefined {

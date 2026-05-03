@@ -61,6 +61,7 @@ export class AiService {
     });
     const cached = this.cache.get<SummarizeArticleResponseDto>(cacheKey);
     if (cached) {
+      this.usage.record('article.summarize');
       return cached;
     }
 
@@ -109,6 +110,7 @@ export class AiService {
     });
     const cached = this.cache.get<TranslateArticleResponseDto>(cacheKey);
     if (cached) {
+      this.usage.record('article.translate');
       return cached;
     }
 
