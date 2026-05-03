@@ -1,6 +1,6 @@
 # Knowledge Hub API
 
-REST API for the **Knowledge Hub** platform (Nest.js, TypeScript). The service manages **users**, **articles**, **categories**, and **comments** with in-memory storage (ready to be swapped for a database later).
+REST API for the **Knowledge Hub** platform (Nest.js, TypeScript, Prisma, PostgreSQL). The service manages **users**, **articles**, **categories**, and **comments** backed by a database.
 
 ## Requirements
 
@@ -44,6 +44,95 @@ PORT=4000
 | `POSTGRES_DB` | Database name | _(see `.env.example`)_ |
 | `POSTGRES_HOST` | Database hostname (`db` inside Compose network) | `db` |
 | `POSTGRES_PORT` | Database port | `5432` |
+| `GEMINI_API_KEY` | Google AI Studio / Gemini API key for AI routes | _(required for `/ai/*`)_ |
+| `GEMINI_API_BASE_URL` | Gemini REST host | `https://generativelanguage.googleapis.com` |
+| `GEMINI_MODEL` | Model id segment in `…/models/{id}:generateContent` | `gemini-2.0-flash` |
+| `GEMINI_HTTP_TIMEOUT_MS` | Optional Gemini HTTP timeout per request (ms) | `120000` |
+| `AI_RATE_LIMIT_RPM` | Per-IP throttle for **`AiController` only** (requests per rolling minute); returns **429** with **`Retry-After`** headers when exceeded | `20` |
+| `AI_CACHE_TTL_SEC` | In-memory TTL for **summarize** and **translate** cache entries (`article.updatedAt` in key) | `300` |
+
+### Obtaining a Gemini API key
+
+1. Open [Google AI Studio](https://aistudio.google.com/) (Google account required).
+2. Open **Get API key** (or API keys section) and create a key for a Google AI / Gemini Developer API project.
+3. Restrict usage in Google Cloud Console if desired; copy the key (do not commit it).
+
+### Gemini model
+
+The service calls `POST …/v1beta/models/${GEMINI_MODEL}:generateContent`. Set **`GEMINI_MODEL`** in `.env` to a model your account and region support (defaults are tuned for **`gemini-2.0-flash`**).
+
+### Running and testing AI routes
+
+**Required `.env` for local runs:** copy from **`.env.example`** and set at least **`DATABASE_URL`**, **`GEMINI_API_KEY`**, **`JWT_SECRET_KEY`**, **`JWT_SECRET_REFRESH_KEY`**, **`CRYPT_SALT`** (see the example file for defaults and optional tuning). **Paste the Gemini key** on the line `GEMINI_API_KEY=...` in **`.env`** (project root, same folder as `package.json` — do not commit this file).
+
+```bash
+cp .env.example .env
+# Edit .env: set DATABASE_URL, JWT_*, CRYPT_SALT, and paste your key into GEMINI_API_KEY=...
+
+npm install
+npm run prisma:generate
+npm run prisma:migrate   # or your existing migration workflow
+npm run db:seed          # optional: sample data and article UUIDs for AI routes
+npm run start:dev
+```
+
+Article-scoped AI calls need a **real `articleId`** from the database (e.g. from **`GET /article`** or seed output); otherwise the API returns **404**.
+
+Swagger: **`http://localhost:4000/doc`** (`/doc` ignores `API_KEY` if configured).
+
+Examples (replace placeholders):
+
+```bash
+# Summarize
+curl -s -X POST http://localhost:4000/ai/articles/ARTICLE_UUID/summarize \
+  -H "Content-Type: application/json" \
+  -d "{\"maxLength\":\"medium\"}"
+
+# Translate (targetLanguage required)
+curl -s -X POST http://localhost:4000/ai/articles/ARTICLE_UUID/translate \
+  -H "Content-Type: application/json" \
+  -d "{\"targetLanguage\":\"en\",\"sourceLanguage\":\"ru\"}"
+
+# Analyze (task optional: review | bugs | optimize | explain)
+curl -s -X POST http://localhost:4000/ai/articles/ARTICLE_UUID/analyze \
+  -H "Content-Type: application/json" \
+  -d "{\"task\":\"review\"}"
+
+# Generic generation (multi-turn optional: send returned sessionId on the next request)
+curl -s -X POST http://localhost:4000/ai/generate \
+  -H "Content-Type: application/json" \
+  -d "{\"prompt\":\"What is PostgreSQL in one paragraph?\"}"
+
+# Aggregate usage & diagnostics since process start (rate-limited like other /ai routes)
+curl -s -H "Accept: application/json" http://localhost:4000/ai/usage
+
+# Continue a conversation started with POST /ai/generate
+curl -s -X POST http://localhost:4000/ai/generate \
+  -H "Content-Type: application/json" \
+  -d "{\"prompt\":\"Give one drawback.\",\"sessionId\":\"PASTE_SESSION_UUID\",\"resetContext\":false}"
+```
+
+All `/ai/*` routes share a dedicated rate limit (`AI_RATE_LIMIT_RPM`), return **429** when exceeded, and may set **`Retry-After`**. Summarize and translate responses are cached in memory for **`AI_CACHE_TTL_SEC`** using a key that includes the article `updatedAt`, so edits invalidate cache.
+
+#### Cross-cutting AI behaviour (assignment checklist)
+
+- **Module & integration**: `AiModule` + `GeminiService` (HTTP to `generativelanguage.googleapis.com`).
+- **Prompts**: under `src/ai/prompts/`; controllers contain no prompt text.
+- **Validation**: AI bodies use DTOs + global `ValidationPipe` (whitelist / forbid non-whitelisted).
+- **Rate limiting**: second Throttler bucket `ai` tied to `AI_RATE_LIMIT_RPM`, only applied to `AiController`; default **100/min** bucket unchanged for the rest of the app.
+- **Caching**: in-memory `AiCacheService` for **summarize** and **translate** (deterministic JSON key: type, `articleId`, `updatedAt`, params).
+- **Usage + diagnostics**: **`GET /ai/usage`** returns totals, **per-endpoint counters**, optional **Gemini token** sums, rolling **average latency** per endpoint, summarize/translate **cache hit ratios**, and process **uptime** (`AiUsageService`, `AiObservabilityService`).
+- **Structured output**: **`class-validator`** DTOs (`GeminiJsonTranslateDto`, `GeminiJsonAnalyzeDto`) validated via **`structured-ai-response.validation.ts`** — translate failures → **503**; analyze misses schema → tolerant fallback + **`schemaValidated: false`** in response.
+- **Conversation memory**: **`POST /ai/generate`** accepts optional **`sessionId`** (**UUID v4**) and returns **`sessionId`** to reuse; alternating user/model pairs are capped and evicted via TTL / map size guards (`AiGenerateSessionService`).
+- **Errors**: timeouts and network → **503**; exhausted upstream **429**/**5xx** after up to **3** attempts with backoff/`Retry-After` → **503**; **401**/**403** and typical invalid-key **400** payloads → **500** with a generic message (no key in response).
+- **Logging**: `GeminiService` uses `AppLogger` and **redacts** substrings that resemble API keys before logging error bodies; request logging still uses the existing HTTP middleware (password/token field redaction).
+
+### Known limitations
+
+- **Quotas and billing**: Free tier and project quotas may return **429** from Google; the client receives **503** after retries in some cases.
+- **Regional availability**: Some models or the Developer API may be unavailable in certain countries; errors often mention location or access.
+- **Latency**: Large articles and slow networks increase response time; per-request timeout is controlled by **`GEMINI_HTTP_TIMEOUT_MS`** (default **120000** ms when unset).
+- **Caching**: In-memory only — not shared across instances; restart clears cache and usage counters.
 
 ## Docker
 
