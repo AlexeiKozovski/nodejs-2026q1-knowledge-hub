@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Param,
@@ -21,6 +22,7 @@ import {
   AnalyzeArticleRequestDto,
   AnalyzeArticleResponseDto,
 } from './dto/analyze-article.dto';
+import { AiUsageAndMetricsResponseDto } from './dto/ai-usage-metrics.dto';
 import {
   GenerateAiRequestDto,
   GenerateAiResponseDto,
@@ -42,6 +44,17 @@ import {
 @SkipThrottle({ default: true })
 export class AiController {
   constructor(private readonly aiService: AiService) {}
+
+  @Get('usage')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary:
+      'Usage counters + diagnostics (latency averages, summarize/translate cache hit ratio, uptime)',
+  })
+  @ApiOkResponse({ type: AiUsageAndMetricsResponseDto })
+  getAiUsage(): AiUsageAndMetricsResponseDto {
+    return this.aiService.getUsageAndDiagnostics();
+  }
 
   @Post('articles/:articleId/summarize')
   @HttpCode(HttpStatus.OK)

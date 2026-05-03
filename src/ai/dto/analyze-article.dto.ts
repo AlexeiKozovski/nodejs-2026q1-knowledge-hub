@@ -32,4 +32,10 @@ export class AnalyzeArticleResponseDto {
 
   @ApiProperty({ enum: ['info', 'warning', 'error'] })
   severity!: AnalyzeSeverityDto;
+
+  @ApiPropertyOptional({
+    description:
+      'When false, the JSON failed class-validator checks and tolerant parsing was used',
+  })
+  schemaValidated?: boolean;
 }

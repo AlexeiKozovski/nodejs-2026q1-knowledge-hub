@@ -1,7 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsBoolean,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   MinLength,
   IsInt,
@@ -10,6 +12,24 @@ import {
 } from 'class-validator';
 
 export class GenerateAiRequestDto {
+  @ApiPropertyOptional({
+    description:
+      'Conversation session id from a previous /ai/generate response (short-term memory)',
+    format: 'uuid',
+  })
+  @IsOptional()
+  @IsUUID('4')
+  sessionId?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'When true and sessionId is set, clears stored turns before this call',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  resetContext?: boolean;
+
   @ApiProperty({
     description: 'User prompt for open-ended generation',
     minLength: 1,
@@ -46,4 +66,11 @@ export class GenerateAiRequestDto {
 export class GenerateAiResponseDto {
   @ApiProperty()
   text!: string;
+
+  @ApiProperty({
+    description:
+      'Send this value back as sessionId on the next request to continue the dialogue',
+    format: 'uuid',
+  })
+  sessionId!: string;
 }

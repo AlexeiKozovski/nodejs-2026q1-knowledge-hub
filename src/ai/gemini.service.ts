@@ -8,6 +8,11 @@ import { AppLogger } from '../common/logging/app.logger';
 
 const MAX_ATTEMPTS = 3;
 
+export type GeminiContentPayload = Array<{
+  role: string;
+  parts: Array<{ text: string }>;
+}>;
+
 interface GeminiGenerateContentResponse {
   usageMetadata?: {
     totalTokenCount?: number;
@@ -50,11 +55,24 @@ export class GeminiService {
     prompt: string,
     options?: { maxOutputTokens?: number },
   ): Promise<GeminiTextResult> {
-    return this.generateWithConfig(
-      prompt,
-      {
-        maxOutputTokens: options?.maxOutputTokens,
-      },
+    return this.executeGenerateRequest(
+      [{ role: 'user', parts: [{ text: prompt }] }],
+      options?.maxOutputTokens,
+      'none',
+    );
+  }
+
+  /** Multi-turn chat: roles alternate `user` / `model`. */
+  async generateTextFromContents(
+    contents: GeminiContentPayload,
+    options?: { maxOutputTokens?: number },
+  ): Promise<GeminiTextResult> {
+    if (!contents.length) {
+      throw new ServiceUnavailableException('AI request has no content');
+    }
+    return this.executeGenerateRequest(
+      contents,
+      options?.maxOutputTokens,
       'none',
     );
   }
@@ -62,7 +80,11 @@ export class GeminiService {
   async generateJson(
     prompt: string,
   ): Promise<GeminiTextResult & { value: unknown }> {
-    const r = await this.generateWithConfig(prompt, {}, 'application/json');
+    const r = await this.executeGenerateRequest(
+      [{ role: 'user', parts: [{ text: prompt }] }],
+      undefined,
+      'application/json',
+    );
     let value: unknown;
     try {
       value = JSON.parse(r.text) as unknown;
@@ -78,9 +100,9 @@ export class GeminiService {
     return { ...r, value };
   }
 
-  private async generateWithConfig(
-    prompt: string,
-    gen: { maxOutputTokens?: number },
+  private async executeGenerateRequest(
+    contents: GeminiContentPayload,
+    maxOutputTokens: number | undefined,
     responseMimeType: 'none' | 'application/json',
   ): Promise<GeminiTextResult> {
     const apiKey = this.configService.get<string>('GEMINI_API_KEY');
@@ -111,8 +133,8 @@ export class GeminiService {
 
     const generationConfig: Record<string, unknown> = {
       temperature: 0.35,
-      ...(gen.maxOutputTokens !== undefined
-        ? { maxOutputTokens: gen.maxOutputTokens }
+      ...(maxOutputTokens !== undefined
+        ? { maxOutputTokens }
         : { maxOutputTokens: 8192 }),
     };
     if (responseMimeType === 'application/json') {
@@ -120,7 +142,7 @@ export class GeminiService {
     }
 
     const body: Record<string, unknown> = {
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      contents,
       generationConfig,
     };
 
