@@ -36,6 +36,12 @@ import {
   TranslateArticleRequestDto,
   TranslateArticleResponseDto,
 } from './dto/translate-article.dto';
+import { ReindexRequestDto, ReindexResponseDto } from './dto/rag-index.dto';
+import {
+  RagSearchRequestDto,
+  RagSearchResponseDto,
+} from './dto/rag-search.dto';
+import { RagService } from './rag.service';
 
 @ApiTags('ai')
 @Controller('ai')
@@ -43,7 +49,10 @@ import {
 @Throttle({ ai: {} })
 @SkipThrottle({ default: true })
 export class AiController {
-  constructor(private readonly aiService: AiService) {}
+  constructor(
+    private readonly aiService: AiService,
+    private readonly ragService: RagService,
+  ) {}
 
   @Get('usage')
   @HttpCode(HttpStatus.OK)
@@ -107,5 +116,24 @@ export class AiController {
   @ApiBadRequestResponse({ description: 'Invalid request payload' })
   generate(@Body() dto: GenerateAiRequestDto): Promise<GenerateAiResponseDto> {
     return this.aiService.generate(dto);
+  }
+
+  @Post('rag/index')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Build or refresh vector index from Knowledge Hub articles',
+  })
+  @ApiOkResponse({ type: ReindexResponseDto })
+  reindex(@Body() dto: ReindexRequestDto): Promise<ReindexResponseDto> {
+    return this.ragService.reindex(dto);
+  }
+
+  @Post('rag/search')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Semantic search over indexed article chunks' })
+  @ApiOkResponse({ type: RagSearchResponseDto })
+  @ApiBadRequestResponse({ description: 'query is required' })
+  ragSearch(@Body() dto: RagSearchRequestDto): Promise<RagSearchResponseDto> {
+    return this.ragService.search(dto);
   }
 }

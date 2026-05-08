@@ -8,6 +8,7 @@ import { AiGenerateSessionService } from './ai-generate-session.service';
 import { AiObservabilityService } from './ai-observability.service';
 import { AiUsageService } from './ai-usage.service';
 import { GeminiService } from './gemini.service';
+import { RagService } from './rag.service';
 
 @Module({
   imports: [PrismaModule],
@@ -20,6 +21,7 @@ import { GeminiService } from './gemini.service';
     AiObservabilityService,
     AiGenerateSessionService,
     AiUsageService,
+    RagService,
   ],
 })
 export class AiModule {}
