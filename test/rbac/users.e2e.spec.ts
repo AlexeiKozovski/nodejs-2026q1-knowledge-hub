@@ -30,19 +30,11 @@ describe('RBAC - Users (e2e)', () => {
     adminHeaders = { ...headers, Authorization: adminResult.token };
     adminUserId = adminResult.mockUserId;
 
-    const editorResult = await getUserTokenByRole(
-      request,
-      'editor',
-      adminHeaders,
-    );
+    const editorResult = await getUserTokenByRole(request, 'editor');
     editorHeaders = { ...headers, Authorization: editorResult.token };
     editorUserId = editorResult.userId;
 
-    const viewerResult = await getUserTokenByRole(
-      request,
-      'viewer',
-      adminHeaders,
-    );
+    const viewerResult = await getUserTokenByRole(request, 'viewer');
     viewerHeaders = { ...headers, Authorization: viewerResult.token };
     viewerUserId = viewerResult.userId;
   });

@@ -4,9 +4,6 @@ import promoteUserRole from './promoteUserRole';
 const getUserTokenByRole = async (
   request,
   role: 'admin' | 'editor' | 'viewer',
-  // kept for signature compatibility with existing RBAC specs; unused now
-  // because role promotion happens directly via Prisma
-  _adminHeaders?: Record<string, string>,
 ) => {
   const login = `TEST_RBAC_${role.toUpperCase()}_${Date.now()}`;
   const password = 'TestPass123!';

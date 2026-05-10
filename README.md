@@ -50,6 +50,13 @@ PORT=4000
 | `GEMINI_HTTP_TIMEOUT_MS` | Optional Gemini HTTP timeout per request (ms) | `120000` |
 | `AI_RATE_LIMIT_RPM` | Per-IP throttle for **`AiController` only** (requests per rolling minute); returns **429** with **`Retry-After`** headers when exceeded | `20` |
 | `AI_CACHE_TTL_SEC` | In-memory TTL for **summarize** and **translate** cache entries (`article.updatedAt` in key) | `300` |
+| `GEMINI_EMBEDDING_MODEL` | Model id for `…:embedContent` (RAG embeddings) | `text-embedding-004` |
+| `RAG_VECTOR_DB_URL` | Qdrant HTTP API base URL (`http://vectordb:6333` in Compose, `http://localhost:6333` when the API runs on the host) | `http://vectordb:6333` |
+| `RAG_VECTOR_COLLECTION` | Qdrant collection name | `knowledge_hub_articles` |
+| `RAG_CHUNK_SIZE` / `RAG_CHUNK_OVERLAP` | Article text chunking (deterministic between runs) | `800` / `200` |
+| `RAG_CONVERSATION_MAX_MESSAGES` | Max stored user+assistant turns per RAG `conversationId` | `20` |
+| `RAG_FETCH_MULTIPLIER`, `RAG_RERANK_POOL_MAX`, `RAG_RRF_K` | Hybrid retrieval tuning (semantic fetch breadth, RRF pool, RRF smoothing) | `8`, `24`, `60` |
+| `RAG_HYBRID_SEMANTIC_WEIGHT` / `RAG_HYBRID_LEXICAL_WEIGHT` | Secondary rerank blend (should sum to ~1) | `0.65` / `0.35` |
 
 ### Obtaining a Gemini API key
 
@@ -60,6 +67,16 @@ PORT=4000
 ### Gemini model
 
 The service calls `POST …/v1beta/models/${GEMINI_MODEL}:generateContent`. Set **`GEMINI_MODEL`** in `.env` to a model your account and region support (defaults are tuned for **`gemini-2.0-flash`**).
+
+**Embedding model (RAG):** chunk and query embeddings use **`POST …/v1beta/models/${GEMINI_EMBEDDING_MODEL}:embedContent`**. Default in `.env.example` is **`text-embedding-004`**.
+
+### RAG / vector database (Knowledge Hub retrieval)
+
+- **Module layout:** `RagModule` (`src/ai/rag.module.ts`) hosts **`RagService`**; **`GeminiModule`** exposes **`GeminiService`** for both classic AI routes and RAG (embeddings + grounded answers).
+- **Vector database:** **[Qdrant](https://qdrant.tech/)** stores dense vectors and payload metadata (`articleId`, title, status, category id, tags, chunk text, chunk index). The API talks to Qdrant over HTTP using **`RAG_VECTOR_DB_URL`** (see Docker Compose service **`vectordb`**).
+- **Retrieval:** semantic search in Qdrant is fused with **lexical scoring** via **reciprocal rank fusion (RRF)**; the top pool is **re-ranked** (semantic + lexical + light title overlap). **`POST /ai/rag/search`** and **`POST /ai/rag/chat`** use this pipeline so source attribution matches the chunks passed to Gemini.
+- **Indexing:** **`POST /ai/rag/index`** loads articles from PostgreSQL, chunks text, embeds with Gemini, upserts into Qdrant. Optional **`incremental: true`** reindexes only articles that were never indexed or were **updated after** `ragIndexedAt`. Selective **`articleIds`** forces a refresh for those ids.
+- **Errors:** Qdrant or Gemini outages surface as **503** where appropriate; integration warnings are logged **without** printing API keys (see `GeminiService`, `RagService`).
 
 ### Running and testing AI routes
 
@@ -116,7 +133,7 @@ All `/ai/*` routes share a dedicated rate limit (`AI_RATE_LIMIT_RPM`), return **
 
 #### Cross-cutting AI behaviour (assignment checklist)
 
-- **Module & integration**: `AiModule` + `GeminiService` (HTTP to `generativelanguage.googleapis.com`).
+- **Module & integration**: `AiModule` imports **`GeminiModule`** and **`RagModule`**; **`GeminiService`** calls `generativelanguage.googleapis.com`; RAG lives in **`RagService`**.
 - **Prompts**: under `src/ai/prompts/`; controllers contain no prompt text.
 - **Validation**: AI bodies use DTOs + global `ValidationPipe` (whitelist / forbid non-whitelisted).
 - **Rate limiting**: second Throttler bucket `ai` tied to `AI_RATE_LIMIT_RPM`, only applied to `AiController`; default **100/min** bucket unchanged for the rest of the app.
@@ -133,20 +150,51 @@ All `/ai/*` routes share a dedicated rate limit (`AI_RATE_LIMIT_RPM`), return **
 - **Regional availability**: Some models or the Developer API may be unavailable in certain countries; errors often mention location or access.
 - **Latency**: Large articles and slow networks increase response time; per-request timeout is controlled by **`GEMINI_HTTP_TIMEOUT_MS`** (default **120000** ms when unset).
 - **Caching**: In-memory only — not shared across instances; restart clears cache and usage counters.
+- **RAG indexing time**: Initial or full reindex embeds every chunk via Gemini; large corpuses are quota- and latency-sensitive (free tier RPM limits).
+- **RAG memory**: Conversation history for **`/ai/rag/chat`** is **in-memory** in the running process (not shared across instances or restarts).
+- **Vector data**: Qdrant persistence uses the **`qdrant_data`** Docker volume; back it up if you rely on not re-embedding from PostgreSQL.
 
 ## Docker
 
-Build and run the API together with PostgreSQL:
+Build and run the **API**, **PostgreSQL**, and **Qdrant** together:
 
 ```bash
 cp .env.example .env
+# Set GEMINI_API_KEY, JWT_*, CRYPT_SALT, DATABASE_URL as for local dev; keep RAG_VECTOR_DB_URL=http://vectordb:6333 for in-network Compose.
 docker compose up --build
 ```
 
-The API is mapped to **port 4000** (`4000:4000`). Keep `PORT=4000` in `.env` when using this mapping. PostgreSQL is available on **5432** with data in the named volume `postgres_data`. Services use the bridge network **`knowledge-hub`**.
+The API is mapped to **port 4000** (`4000:4000`). Keep `PORT=4000` in `.env` when using this mapping. PostgreSQL is available on **5432** with data in the named volume **`postgres_data`**. **Qdrant** is built from **`docker/qdrant/Dockerfile`** (official `qdrant/qdrant` plus **`curl`** so Compose can run HTTP health checks), is exposed on **`6333`** (REST) and **`6334`** (gRPC optional), and stores data in **`qdrant_data`**. The **`app`** service starts only after **`db`** and **`vectordb`** report healthy. Services use the bridge network **`knowledge-hub`**.
 
-- **Health check:** `GET /` returns `{ "status": "ok" }` (used by the container health check).
+- **Health check:** `GET /` returns `{ "status": "ok" }` (used by the API container health check). The Qdrant service checks **`/readyz`**, with **`/healthz`** as a fallback.
 - **Adminer** (optional UI for the database): `docker compose --profile debug up --build`, then open `http://localhost:8080` and use server **`db`**, user / password / database from your `.env`.
+
+### Full startup flow (clone → RAG)
+
+1. **Clone and install:** `git clone … && cd nodejs-2026q1-knowledge-hub && npm install`
+2. **Environment:** `cp .env.example .env` — set **`GEMINI_API_KEY`**, **`GEMINI_MODEL`** (generation), **`GEMINI_EMBEDDING_MODEL`** (RAG embeddings), **`JWT_SECRET_KEY`**, **`JWT_SECRET_REFRESH_KEY`**, **`CRYPT_SALT`**, and **`DATABASE_URL`**. For Compose from the repo root, point **`DATABASE_URL`** at PostgreSQL (see Compose `environment` override for `app`).
+3. **Database:** `npm run prisma:generate && npm run prisma:migrate` (apply migration that adds **`ragIndexedAt`** on articles when you use incremental indexing).
+4. **Docker Compose:** `docker compose up --build` — waits for **Postgres** and **Qdrant** to be healthy before starting the API.
+5. **Seed (optional):** `npm run db:seed` when the API/DB are available, to get sample **`articleId`** values.
+6. **Build index:** `POST /ai/rag/index` with body `{}` or `{ "onlyPublished": true }` (add `"incremental": true` later for dirty-only runs).
+7. **Try RAG:**
+
+```bash
+# Semantic / hybrid search
+curl -s -X POST http://localhost:4000/ai/rag/search \
+  -H "Content-Type: application/json" \
+  -d "{\"query\":\"nodejs streams\",\"limit\":5}"
+
+# Grounded chat (returns conversationId for follow-up)
+curl -s -X POST http://localhost:4000/ai/rag/chat \
+  -H "Content-Type: application/json" \
+  -d "{\"question\":\"What is covered in the knowledge base about testing?\"}"
+
+# Conversation history (optional)
+curl -s http://localhost:4000/ai/rag/chat/CONVERSATION_UUID/history
+```
+
+When running the Nest app **on the host** but Qdrant **only in Docker**, set **`RAG_VECTOR_DB_URL=http://localhost:6333`** in `.env`.
 
 ### Docker Hub image
 

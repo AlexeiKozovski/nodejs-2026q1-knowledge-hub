@@ -42,6 +42,13 @@ export interface GeminiTextResult {
   totalTokenCount?: number;
 }
 
+interface GeminiEmbeddingResponse {
+  embedding?: {
+    values?: number[];
+  };
+  error?: { code?: number; message?: string; status?: string };
+}
+
 @Injectable()
 export class GeminiService {
   private readonly logContext = GeminiService.name;
@@ -98,6 +105,96 @@ export class GeminiService {
       );
     }
     return { ...r, value };
+  }
+
+  async embedText(text: string): Promise<number[]> {
+    const apiKey = this.configService.get<string>('GEMINI_API_KEY');
+    const baseUrl =
+      this.configService.get<string>('GEMINI_API_BASE_URL') ??
+      'https://generativelanguage.googleapis.com';
+    const model =
+      this.configService.get<string>('GEMINI_EMBEDDING_MODEL') ??
+      'text-embedding-004';
+
+    if (!apiKey) {
+      throw new InternalServerErrorException(
+        'Gemini API key is not configured',
+      );
+    }
+
+    const endpoint = `${baseUrl}/v1beta/models/${model}:embedContent`;
+    const timeoutMs = Math.min(
+      Math.max(
+        5000,
+        Number.parseInt(
+          String(this.configService.get('GEMINI_HTTP_TIMEOUT_MS') ?? '120000'),
+          10,
+        ) || 120_000,
+      ),
+      600_000,
+    );
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+      let response: Response;
+      try {
+        response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey,
+          },
+          body: JSON.stringify({
+            model: `models/${model}`,
+            content: { parts: [{ text }] },
+          }),
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+      } catch {
+        if (attempt < MAX_ATTEMPTS - 1) {
+          await this.delay(Math.min(500 * 2 ** attempt, 4000));
+          continue;
+        }
+        throw new ServiceUnavailableException(
+          'AI provider is currently unavailable',
+        );
+      }
+
+      const rawText = await response.text().catch(() => '');
+      if (response.ok) {
+        let payload: GeminiEmbeddingResponse | null = null;
+        try {
+          payload = JSON.parse(rawText) as GeminiEmbeddingResponse;
+        } catch {
+          throw new ServiceUnavailableException(
+            'AI provider returned malformed embedding data',
+          );
+        }
+        const values = payload?.embedding?.values;
+        if (!Array.isArray(values) || values.length === 0) {
+          throw new ServiceUnavailableException(
+            'AI provider returned empty embedding vector',
+          );
+        }
+        return values;
+      }
+
+      const retriable =
+        attempt < MAX_ATTEMPTS - 1 &&
+        (response.status === 429 || response.status >= 500);
+      if (retriable) {
+        await this.delay(Math.min(1000 * 2 ** attempt, 8000));
+        continue;
+      }
+      this.appLogger.warn(
+        `Gemini embedContent HTTP ${response.status}: ${redactForLog(rawText, 1000)}`,
+        this.logContext,
+      );
+      throw new ServiceUnavailableException('Failed to generate embedding');
+    }
+
+    throw new ServiceUnavailableException(
+      'AI provider is currently unavailable',
+    );
   }
 
   private async executeGenerateRequest(

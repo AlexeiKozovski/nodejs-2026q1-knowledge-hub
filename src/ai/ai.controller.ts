@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpStatus,
@@ -36,6 +37,17 @@ import {
   TranslateArticleRequestDto,
   TranslateArticleResponseDto,
 } from './dto/translate-article.dto';
+import { ReindexRequestDto, ReindexResponseDto } from './dto/rag-index.dto';
+import {
+  RagChatRequestDto,
+  RagChatResponseDto,
+  RagConversationHistoryResponseDto,
+} from './dto/rag-chat.dto';
+import {
+  RagSearchRequestDto,
+  RagSearchResponseDto,
+} from './dto/rag-search.dto';
+import { RagService } from './rag.service';
 
 @ApiTags('ai')
 @Controller('ai')
@@ -43,7 +55,10 @@ import {
 @Throttle({ ai: {} })
 @SkipThrottle({ default: true })
 export class AiController {
-  constructor(private readonly aiService: AiService) {}
+  constructor(
+    private readonly aiService: AiService,
+    private readonly ragService: RagService,
+  ) {}
 
   @Get('usage')
   @HttpCode(HttpStatus.OK)
@@ -107,5 +122,57 @@ export class AiController {
   @ApiBadRequestResponse({ description: 'Invalid request payload' })
   generate(@Body() dto: GenerateAiRequestDto): Promise<GenerateAiResponseDto> {
     return this.aiService.generate(dto);
+  }
+
+  @Post('rag/index')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Build or refresh vector index from Knowledge Hub articles',
+  })
+  @ApiOkResponse({ type: ReindexResponseDto })
+  reindex(@Body() dto: ReindexRequestDto): Promise<ReindexResponseDto> {
+    return this.ragService.reindex(dto);
+  }
+
+  @Post('rag/search')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Semantic search over indexed article chunks' })
+  @ApiOkResponse({ type: RagSearchResponseDto })
+  @ApiBadRequestResponse({ description: 'query is required' })
+  ragSearch(@Body() dto: RagSearchRequestDto): Promise<RagSearchResponseDto> {
+    return this.ragService.search(dto);
+  }
+
+  @Post('rag/chat')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Chat with Knowledge Hub RAG' })
+  @ApiOkResponse({ type: RagChatResponseDto })
+  @ApiBadRequestResponse({ description: 'question is required' })
+  ragChat(@Body() dto: RagChatRequestDto): Promise<RagChatResponseDto> {
+    return this.ragService.chat(dto);
+  }
+
+  @Delete('rag/index/articles/:articleId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Delete all indexed vectors for one article' })
+  @ApiNotFoundResponse({
+    description: 'Article or index entries were not found',
+  })
+  deleteArticleFromRagIndex(
+    @Param('articleId', new ParseUUIDPipe({ version: '4' })) articleId: string,
+  ): Promise<void> {
+    return this.ragService.deleteArticleFromIndex(articleId);
+  }
+
+  @Get('rag/chat/:conversationId/history')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Get stored RAG conversation history' })
+  @ApiOkResponse({ type: RagConversationHistoryResponseDto })
+  @ApiNotFoundResponse({ description: 'Conversation not found' })
+  getRagConversationHistory(
+    @Param('conversationId', new ParseUUIDPipe({ version: '4' }))
+    conversationId: string,
+  ): RagConversationHistoryResponseDto {
+    return this.ragService.getConversationHistory(conversationId);
   }
 }
