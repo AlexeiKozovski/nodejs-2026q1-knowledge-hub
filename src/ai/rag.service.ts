@@ -58,6 +58,7 @@ export class RagService {
 
   async reindex(dto: ReindexRequestDto): Promise<ReindexResponseDto> {
     const onlyPublished = dto.onlyPublished ?? true;
+    const incremental = dto.incremental ?? false;
 
     const articles = await this.prisma.article.findMany({
       where: {
@@ -70,6 +71,13 @@ export class RagService {
       orderBy: { id: 'asc' },
     });
 
+    const articlesToIndex =
+      incremental && !dto.articleIds?.length
+        ? articles.filter(
+            (a) => a.ragIndexedAt == null || a.updatedAt > a.ragIndexedAt,
+          )
+        : articles;
+
     const chunkSize = this.readChunkSize();
     const chunkOverlap = this.readChunkOverlap(chunkSize);
     const points: Array<{
@@ -79,7 +87,7 @@ export class RagService {
     }> = [];
     let vectorSize: number | null = null;
 
-    for (const article of articles) {
+    for (const article of articlesToIndex) {
       await this.deleteArticleVectors(article.id);
       const chunks = this.chunkText(article.content, chunkSize, chunkOverlap);
       for (let index = 0; index < chunks.length; index += 1) {
@@ -100,6 +108,11 @@ export class RagService {
           },
         });
       }
+
+      await this.prisma.article.update({
+        where: { id: article.id },
+        data: { ragIndexedAt: new Date() },
+      });
     }
 
     if (vectorSize !== null) {
@@ -108,42 +121,28 @@ export class RagService {
     }
 
     return {
-      indexedArticles: articles.length,
+      indexedArticles: articlesToIndex.length,
       indexedChunks: points.length,
       vectorCollection: this.collectionName(),
     };
   }
 
   async search(dto: RagSearchRequestDto): Promise<RagSearchResponseDto> {
-    const vector = await this.geminiService.embedText(dto.query);
     const effectiveLimit = dto.limit ?? 5;
-    const raw = await this.searchQdrant(
-      vector,
-      Math.min(100, effectiveLimit * 5),
-      {
-        articleStatus: dto.articleStatus,
-        categoryId: dto.categoryId,
-      },
-    );
+    const ranked = await this.hybridRetrieve(dto.query, effectiveLimit, {
+      articleStatus: dto.articleStatus,
+      categoryId: dto.categoryId,
+      tags: dto.tags,
+    });
 
-    const filtered = raw
-      .filter((entry) => entry.payload)
-      .filter((entry) => {
-        if (!dto.tags?.length) {
-          return true;
-        }
-        const pointTags = entry.payload?.tags ?? [];
-        return dto.tags.some((tag) => pointTags.includes(tag));
-      })
-      .slice(0, effectiveLimit)
-      .map(
-        (entry): RagSearchResultDto => ({
-          articleId: entry.payload!.articleId,
-          articleTitle: entry.payload!.articleTitle,
-          chunk: entry.payload!.chunk,
-          similarity: Number(entry.score.toFixed(6)),
-        }),
-      );
+    const filtered = ranked.map(
+      (entry): RagSearchResultDto => ({
+        articleId: entry.payload!.articleId,
+        articleTitle: entry.payload!.articleTitle,
+        chunk: entry.payload!.chunk,
+        similarity: Number(entry.score.toFixed(6)),
+      }),
+    );
 
     return { results: filtered };
   }
@@ -151,7 +150,7 @@ export class RagService {
   async chat(dto: RagChatRequestDto): Promise<RagChatResponseDto> {
     const conversationId = dto.conversationId ?? randomUUID();
     const memory = this.conversationMemory.get(conversationId) ?? [];
-    const results = await this.searchQdrantByQuestion(dto.question, 5);
+    const results = await this.hybridRetrieve(dto.question, 5, {});
     const sources = results
       .filter((item) => item.payload)
       .slice(0, 5)
@@ -209,6 +208,10 @@ export class RagService {
       throw new NotFoundError('Article index entries not found');
     }
     await this.deleteArticleVectors(articleId);
+    await this.prisma.article.updateMany({
+      where: { id: articleId },
+      data: { ragIndexedAt: null },
+    });
   }
 
   private chunkText(
@@ -344,12 +347,184 @@ export class RagService {
     return Array.isArray(list) && list.length > 0;
   }
 
-  private async searchQdrantByQuestion(
-    question: string,
+  private async hybridRetrieve(
+    query: string,
     limit: number,
+    filters: {
+      articleStatus?: ArticleStatus;
+      categoryId?: string;
+      tags?: string[];
+    },
   ): Promise<QdrantSearchResult[]> {
-    const vector = await this.geminiService.embedText(question);
-    return this.searchQdrant(vector, limit, {});
+    const vector = await this.geminiService.embedText(query);
+    const fetchCap = Math.min(
+      100,
+      Math.max(limit * this.readFetchMultiplier(), 15),
+    );
+    const raw = await this.searchQdrant(vector, fetchCap, {
+      articleStatus: filters.articleStatus,
+      categoryId: filters.categoryId,
+    });
+
+    const withPayload = raw.filter((entry) => entry.payload);
+    const tagFiltered = withPayload.filter((entry) => {
+      if (!filters.tags?.length) {
+        return true;
+      }
+      const pointTags = entry.payload?.tags ?? [];
+      return filters.tags.some((tag) => pointTags.includes(tag));
+    });
+
+    if (tagFiltered.length === 0) {
+      return [];
+    }
+
+    const semanticOrder = [...tagFiltered].sort((a, b) => b.score - a.score);
+    const lexicalOrder = [...tagFiltered].sort(
+      (a, b) =>
+        this.lexicalScoreRaw(query, b.payload!.chunk) -
+        this.lexicalScoreRaw(query, a.payload!.chunk),
+    );
+
+    const rrf = this.reciprocalRankFusion(semanticOrder, lexicalOrder);
+    const rrfSorted = [...tagFiltered].sort((a, b) => {
+      const sa = rrf.get(this.pointKey(a)) ?? 0;
+      const sb = rrf.get(this.pointKey(b)) ?? 0;
+      return sb - sa;
+    });
+
+    const poolMax = this.readRerankPoolMax();
+    const rerankPool = rrfSorted.slice(0, Math.max(poolMax, limit));
+    const reranked = this.secondaryRerank(query, rerankPool);
+    return reranked.slice(0, limit);
+  }
+
+  private pointKey(entry: QdrantSearchResult): string {
+    return String(entry.id);
+  }
+
+  private reciprocalRankFusion(
+    semanticOrder: QdrantSearchResult[],
+    lexicalOrder: QdrantSearchResult[],
+  ): Map<string, number> {
+    const k = this.readRrfK();
+    const scores = new Map<string, number>();
+    semanticOrder.forEach((item, rank) => {
+      const key = this.pointKey(item);
+      scores.set(key, (scores.get(key) ?? 0) + 1 / (k + rank + 1));
+    });
+    lexicalOrder.forEach((item, rank) => {
+      const key = this.pointKey(item);
+      scores.set(key, (scores.get(key) ?? 0) + 1 / (k + rank + 1));
+    });
+    return scores;
+  }
+
+  private secondaryRerank(
+    query: string,
+    items: QdrantSearchResult[],
+  ): QdrantSearchResult[] {
+    if (items.length <= 1) {
+      return items;
+    }
+
+    const lexVals = items.map((i) =>
+      this.lexicalScoreRaw(query, i.payload!.chunk),
+    );
+    const maxLex = Math.max(...lexVals, 1e-9);
+    const wSem = this.readHybridSemanticWeight();
+    const wLex = this.readHybridLexicalWeight();
+    const terms = this.tokenizeQuery(query);
+
+    const scored = items.map((item, idx) => {
+      const semNorm = Math.max(0, Math.min(1, item.score));
+      const lexNorm = lexVals[idx]! / maxLex;
+      const title = item.payload!.articleTitle.toLowerCase();
+      const titleBoost = terms.some((t) => t.length > 1 && title.includes(t))
+        ? 0.06
+        : 0;
+      const combined = wSem * semNorm + wLex * lexNorm + titleBoost;
+      return { item, combined };
+    });
+
+    scored.sort((a, b) => b.combined - a.combined);
+    return scored.map((s) => {
+      const next = s.item;
+      next.score = Math.min(1, Math.max(0, s.combined));
+      return next;
+    });
+  }
+
+  private tokenizeQuery(text: string): string[] {
+    return text
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((t) => t.length > 0);
+  }
+
+  private lexicalScoreRaw(query: string, chunk: string): number {
+    const terms = this.tokenizeQuery(query).filter((t) => t.length > 1);
+    if (terms.length === 0) {
+      return 0;
+    }
+    let s = 0;
+    const lower = chunk.toLowerCase();
+    for (const t of terms) {
+      let offset = 0;
+      let hits = 0;
+      while ((offset = lower.indexOf(t, offset)) !== -1) {
+        hits += 1;
+        offset += t.length;
+      }
+      if (hits > 0) {
+        s += 1 + Math.log(hits);
+      }
+    }
+    return s;
+  }
+
+  private readFetchMultiplier(): number {
+    const value = Number.parseInt(
+      String(this.configService.get('RAG_FETCH_MULTIPLIER') ?? '8'),
+      10,
+    );
+    return Number.isFinite(value) && value >= 2 ? value : 8;
+  }
+
+  private readRerankPoolMax(): number {
+    const value = Number.parseInt(
+      String(this.configService.get('RAG_RERANK_POOL_MAX') ?? '24'),
+      10,
+    );
+    return Number.isFinite(value) && value >= 4 ? value : 24;
+  }
+
+  private readRrfK(): number {
+    const value = Number.parseInt(
+      String(this.configService.get('RAG_RRF_K') ?? '60'),
+      10,
+    );
+    return Number.isFinite(value) && value >= 1 ? value : 60;
+  }
+
+  private readHybridSemanticWeight(): number {
+    const v = Number.parseFloat(
+      String(this.configService.get('RAG_HYBRID_SEMANTIC_WEIGHT') ?? '0.65'),
+    );
+    if (!Number.isFinite(v) || v < 0) {
+      return 0.65;
+    }
+    return Math.min(1, v);
+  }
+
+  private readHybridLexicalWeight(): number {
+    const v = Number.parseFloat(
+      String(this.configService.get('RAG_HYBRID_LEXICAL_WEIGHT') ?? '0.35'),
+    );
+    if (!Number.isFinite(v) || v < 0) {
+      return 0.35;
+    }
+    return Math.min(1, v);
   }
 
   private buildChatPrompt(

@@ -17,6 +17,15 @@ export class ReindexRequestDto {
   onlyPublished?: boolean;
 
   @ApiPropertyOptional({
+    description:
+      'When true, indexes only articles never indexed or updated since last successful RAG index (ignored when articleIds is set)',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  incremental?: boolean;
+
+  @ApiPropertyOptional({
     description: 'Optional list of article ids for selective reindex',
     type: [String],
   })

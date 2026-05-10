@@ -7,21 +7,19 @@ import { AiCacheService } from './ai-cache.service';
 import { AiGenerateSessionService } from './ai-generate-session.service';
 import { AiObservabilityService } from './ai-observability.service';
 import { AiUsageService } from './ai-usage.service';
-import { GeminiService } from './gemini.service';
-import { RagService } from './rag.service';
+import { GeminiModule } from './gemini.module';
+import { RagModule } from './rag.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, GeminiModule, RagModule],
   controllers: [AiController],
   providers: [
     AppLogger,
     AiService,
-    GeminiService,
     AiCacheService,
     AiObservabilityService,
     AiGenerateSessionService,
     AiUsageService,
-    RagService,
   ],
 })
 export class AiModule {}

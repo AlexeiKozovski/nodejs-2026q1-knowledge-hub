@@ -36,6 +36,8 @@ model Article {
   status     ArticleStatus
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
+  /// Set when article vectors were last successfully written to the RAG index
+  ragIndexedAt DateTime?
   authorId   String?
   categoryId String?
   author     User?         @relation(fields: [authorId], references: [id], onDelete: SetNull)
